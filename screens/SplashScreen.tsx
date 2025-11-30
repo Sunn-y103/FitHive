@@ -2,16 +2,19 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useAuth } from '../contexts/AuthContext';
 
 type RootStackParamList = {
   Login: undefined;
   Splash: undefined;
+  HomeTabs: undefined;
 };
 
 type SplashScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Splash'>;
 
 const SplashScreen: React.FC = () => {
   const navigation = useNavigation<SplashScreenNavigationProp>();
+  const { user, loading } = useAuth();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -22,13 +25,19 @@ const SplashScreen: React.FC = () => {
       useNativeDriver: true,
     }).start();
 
-    // Navigate to Login after 2 seconds
-    const timer = setTimeout(() => {
-      navigation.replace('Login');
-    }, 2000);
+    // Wait for auth to load, then navigate
+    if (!loading) {
+      const timer = setTimeout(() => {
+        if (user) {
+          navigation.replace('HomeTabs');
+        } else {
+          navigation.replace('Login');
+        }
+      }, 2000);
 
-    return () => clearTimeout(timer);
-  }, [navigation, fadeAnim]);
+      return () => clearTimeout(timer);
+    }
+  }, [navigation, fadeAnim, user, loading]);
 
   return (
     <View style={styles.container}>

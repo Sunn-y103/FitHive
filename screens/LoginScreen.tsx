@@ -9,27 +9,67 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 type RootStackParamList = {
   Login: undefined;
-  HomeTabs: undefined;
   SignUp: undefined;
+  HomeTabs: undefined;
 };
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
-  const handleLogin = () => {
-    navigation.replace('HomeTabs');
+  // Email validation function - validates format like "abc@gmail.com"
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (text.trim() && !validateEmail(text.trim())) {
+      setEmailError('Please enter a valid email (e.g., abc@gmail.com)');
+    } else {
+      setEmailError('');
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Validate email format
+    if (!validateEmail(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address (e.g., abc@gmail.com)');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await signIn(email.trim(), password);
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Login Failed', error.message || 'Invalid email or password');
+    } else {
+      navigation.replace('HomeTabs');
+    }
   };
 
   return (
@@ -47,18 +87,28 @@ const LoginScreen: React.FC = () => {
             <Text style={styles.subtitle}>Login to continue your journey</Text>
 
             <View style={styles.form}>
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color="#6F6F7B" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor="#6F6F7B"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+              <View style={styles.inputWrapper}>
+                <View style={[styles.inputContainer, emailError && styles.inputContainerError]}>
+                  <Ionicons 
+                    name="mail-outline" 
+                    size={20} 
+                    color={emailError ? '#FF6B6B' : '#6F6F7B'} 
+                    style={styles.inputIcon} 
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email (e.g., abc@gmail.com)"
+                    placeholderTextColor="#6F6F7B"
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                {emailError ? (
+                  <Text style={styles.errorText}>{emailError}</Text>
+                ) : null}
               </View>
 
               <View style={styles.inputContainer}>
@@ -88,14 +138,22 @@ const LoginScreen: React.FC = () => {
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-                <Text style={styles.loginButtonText}>Login</Text>
+              <TouchableOpacity 
+                style={[styles.loginButton, loading && styles.loginButtonDisabled]} 
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Login</Text>
+                )}
               </TouchableOpacity>
             </View>
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SignUp' as never)}>
+              <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
                 <Text style={styles.signUpText}>Sign Up</Text>
               </TouchableOpacity>
             </View>
@@ -138,6 +196,9 @@ const styles = StyleSheet.create({
   form: {
     width: '100%',
   },
+  inputWrapper: {
+    marginBottom: 16,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -145,7 +206,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 16,
-    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -154,6 +214,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  inputContainerError: {
+    borderWidth: 1,
+    borderColor: '#FF6B6B',
+  },
+  errorText: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 20,
   },
   inputIcon: {
     marginRight: 12,
@@ -193,6 +263,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   footer: {
     flexDirection: 'row',

@@ -60,7 +60,7 @@ const BottomTabs: React.FC = () => {
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
-};
+}
 
 export default BottomTabs;
 
