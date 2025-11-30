@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,15 @@ import {
   TextInput,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { useImmediatePersistentState, usePersistentState } from '../hooks/usePersistentState';
+import { Storage } from '../utils/storage';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
 // Profile data interface
 interface ProfileData {
@@ -59,24 +66,39 @@ const MenuItem: React.FC<MenuItemProps> = ({
   </TouchableOpacity>
 );
 
+type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'HomeTabs'>;
+
 const ProfileScreen: React.FC = () => {
-  // Profile state - TODO: Replace with AsyncStorage or backend
-  const [profile, setProfile] = useState<ProfileData>({
-    name: 'John Doe',
-    email: 'john.doe@email.com',
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const { signOut, user } = useAuth();
+  
+  // Profile state with immediate persistence (auto-saves as user types)
+  const [profile, setProfile] = useImmediatePersistentState<ProfileData>('profile', {
+    name: user?.email?.split('@')[0] || 'User',
+    email: user?.email || '',
     age: '28',
     height: '175',
     weight: '70',
     gender: 'Male',
   });
 
-  // Settings state
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
+  // Settings state with persistence
+  const [notificationsEnabled, setNotificationsEnabled] = usePersistentState<boolean>('notificationsEnabled', true);
+  const [darkModeEnabled, setDarkModeEnabled] = usePersistentState<boolean>('darkModeEnabled', false);
+  
+  // Logout loading state
+  const [logoutLoading, setLogoutLoading] = useState(false);
 
-  // Modal state
+  // Modal state (not persisted - temporary editing state)
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editingProfile, setEditingProfile] = useState<ProfileData>(profile);
+  
+  // Sync editing profile when modal opens or profile changes
+  useEffect(() => {
+    if (isEditModalVisible) {
+      setEditingProfile({ ...profile });
+    }
+  }, [isEditModalVisible, profile]);
 
   // Open edit modal
   const handleOpenEdit = () => {
@@ -84,7 +106,7 @@ const ProfileScreen: React.FC = () => {
     setIsEditModalVisible(true);
   };
 
-  // Save profile changes
+  // Save profile changes - uses immediate persistence so auto-saves
   const handleSaveProfile = () => {
     if (!editingProfile.name.trim()) {
       Alert.alert('Error', 'Name is required');
@@ -95,11 +117,9 @@ const ProfileScreen: React.FC = () => {
       return;
     }
     
+    // Save to persistent state (automatically saved immediately to AsyncStorage)
     setProfile(editingProfile);
     setIsEditModalVisible(false);
-    
-    // TODO: Save to AsyncStorage or backend
-    // await AsyncStorage.setItem('userProfile', JSON.stringify(editingProfile));
   };
 
   // Get initials for avatar
@@ -119,10 +139,30 @@ const ProfileScreen: React.FC = () => {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: () => {
-          // TODO: Implement actual logout logic
-          // navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-        }},
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            setLogoutLoading(true);
+            try {
+              // Sign out from Supabase
+              await signOut();
+              
+              // Clear user-specific data from AsyncStorage
+              await Storage.clearUserData();
+              
+              // Navigate to Login screen and reset navigation stack
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
+            } catch (error) {
+              console.error('Error during logout:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+              setLogoutLoading(false);
+            }
+          },
+        },
       ]
     );
   };
@@ -154,7 +194,7 @@ const ProfileScreen: React.FC = () => {
           </View>
           
           <Text style={styles.profileName}>{profile.name}</Text>
-          <Text style={styles.profileEmail}>{profile.email}</Text>
+          <Text style={styles.profileEmail}>{profile.email || user?.email || 'No email'}</Text>
           
           <TouchableOpacity style={styles.editButton} onPress={handleOpenEdit}>
             <Ionicons name="pencil" size={16} color="#FFFFFF" />
@@ -253,9 +293,19 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#FF6B6B" />
-          <Text style={styles.logoutText}>Logout</Text>
+        <TouchableOpacity
+          style={[styles.logoutButton, logoutLoading && styles.logoutButtonDisabled]}
+          onPress={handleLogout}
+          disabled={logoutLoading}
+        >
+          {logoutLoading ? (
+            <ActivityIndicator color="#FF6B6B" />
+          ) : (
+            <>
+              <Ionicons name="log-out-outline" size={20} color="#FF6B6B" />
+              <Text style={styles.logoutText}>Logout</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         {/* App Version */}
@@ -590,6 +640,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FF6B6B',
     marginLeft: 8,
+  },
+  logoutButtonDisabled: {
+    opacity: 0.6,
   },
   // Version
   versionText: {

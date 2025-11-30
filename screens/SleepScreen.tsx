@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { usePersistentState, useImmediatePersistentState } from '../hooks/usePersistentState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -57,38 +58,13 @@ const SleepScreen: React.FC = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState<TabType>('Weekly');
   
-  // Sleep tracking state
-  const [isSleeping, setIsSleeping] = useState(false);
-  const [sleepStart, setSleepStart] = useState<number | null>(null);
+  // Persistent state - automatically saved and restored
+  const [isSleeping, setIsSleeping] = usePersistentState<boolean>('sleep_is_sleeping', false);
+  const [sleepStart, setSleepStart] = usePersistentState<number | null>('sleep_start_time', null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  
-  // TODO: Replace with AsyncStorage or backend persistence
-  // In-memory storage for sleep sessions
-  const [sleepSessions, setSleepSessions] = useState<SleepSession[]>([
-    // Sample data
-    {
-      id: '1',
-      start: Date.now() - 24 * 60 * 60 * 1000 - 7.5 * 60 * 60 * 1000,
-      end: Date.now() - 24 * 60 * 60 * 1000,
-      durationMs: 7.5 * 60 * 60 * 1000,
-    },
-    {
-      id: '2',
-      start: Date.now() - 48 * 60 * 60 * 1000 - 6.5 * 60 * 60 * 1000,
-      end: Date.now() - 48 * 60 * 60 * 1000,
-      durationMs: 6.5 * 60 * 60 * 1000,
-    },
-    {
-      id: '3',
-      start: Date.now() - 72 * 60 * 60 * 1000 - 8 * 60 * 60 * 1000,
-      end: Date.now() - 72 * 60 * 60 * 1000,
-      durationMs: 8 * 60 * 60 * 1000,
-    },
-  ]);
-
-  // Schedule state
-  const [bedtime, setBedtime] = useState('22:00');
-  const [wakeTime, setWakeTime] = useState('07:30');
+  const [sleepSessions, setSleepSessions] = usePersistentState<SleepSession[]>('sleep_sessions', []);
+  const [bedtime, setBedtime] = usePersistentState<string>('sleep_bedtime', '22:00');
+  const [wakeTime, setWakeTime] = usePersistentState<string>('sleep_wake_time', '07:30');
 
   // Live elapsed time update when sleeping
   useEffect(() => {
@@ -109,29 +85,22 @@ const SleepScreen: React.FC = () => {
   }, [isSleeping, sleepStart]);
 
   // Handle sleep toggle
-  const handleSleepToggle = useCallback(() => {
+  const handleSleepToggle = useCallback(async () => {
     if (!isSleeping) {
       // Starting sleep
       if (sleepStart !== null) {
-        // Edge case: There's already a start time without end
-        // TODO: Show toast notification instead of Alert for better UX
         Alert.alert('Sleep Active', 'A sleep session is already in progress.');
         return;
       }
       
       const now = Date.now();
-      setSleepStart(now);
-      setIsSleeping(true);
+      await setSleepStart(now);
+      await setIsSleeping(true);
       setElapsedTime(0);
-      
-      // TODO: Persist sleepStart to AsyncStorage here
-      // await AsyncStorage.setItem('activeSleepStart', now.toString());
       
     } else {
       // Ending sleep
       if (sleepStart === null) {
-        // Edge case: No active sleep session
-        // TODO: Show toast notification
         Alert.alert('No Session', 'No active sleep session to end.');
         return;
       }
@@ -148,18 +117,14 @@ const SleepScreen: React.FC = () => {
       };
       
       // Add to sessions list (prepend for most recent first)
-      setSleepSessions(prev => [newSession, ...prev]);
+      await setSleepSessions((prev) => [newSession, ...prev]);
       
       // Reset state
-      setSleepStart(null);
-      setIsSleeping(false);
+      await setSleepStart(null);
+      await setIsSleeping(false);
       setElapsedTime(0);
-      
-      // TODO: Persist session to AsyncStorage or backend
-      // await AsyncStorage.setItem('sleepSessions', JSON.stringify([newSession, ...sleepSessions]));
-      // await AsyncStorage.removeItem('activeSleepStart');
     }
-  }, [isSleeping, sleepStart]);
+  }, [isSleeping, sleepStart, setIsSleeping, setSleepStart, setSleepSessions]);
 
   // Calculate average sleep time
   const getAverageSleep = (): string => {

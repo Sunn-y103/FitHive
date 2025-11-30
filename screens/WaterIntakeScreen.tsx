@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { usePersistentState } from '../hooks/usePersistentState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRAPH_WIDTH = SCREEN_WIDTH - 80;
@@ -21,7 +22,7 @@ const GRAPH_PADDING = { top: 20, bottom: 30, left: 40, right: 20 };
 interface WaterEntry {
   id: string;
   liters: number;
-  timestamp: Date;
+  timestamp: string; // Store as ISO string for JSON serialization
 }
 
 type TabType = 'Today' | 'Weekly' | 'Monthly';
@@ -37,23 +38,12 @@ const WaterIntakeScreen: React.FC = () => {
   const navigation = useNavigation();
   const [waterAmount, setWaterAmount] = useState('');
   const [selectedTime, setSelectedTime] = useState(0);
-  const [activeTab, setActiveTab] = useState<TabType>('Today');
-  const [entries, setEntries] = useState<WaterEntry[]>([
-    // Sample data
-    { id: '1', liters: 0.5, timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000) },
-    { id: '2', liters: 0.3, timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000) },
-    { id: '3', liters: 0.7, timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000) },
-    { id: '4', liters: 0.4, timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000) },
-    { id: '5', liters: 0.5, timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-    { id: '6', liters: 0.6, timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000) },
-    { id: '7', liters: 0.8, timestamp: new Date(Date.now() - 72 * 60 * 60 * 1000) },
-    { id: '8', liters: 0.4, timestamp: new Date(Date.now() - 96 * 60 * 60 * 1000) },
-    { id: '9', liters: 0.5, timestamp: new Date(Date.now() - 120 * 60 * 60 * 1000) },
-    { id: '10', liters: 0.7, timestamp: new Date(Date.now() - 144 * 60 * 60 * 1000) },
-    { id: '11', liters: 0.6, timestamp: new Date(Date.now() - 168 * 60 * 60 * 1000) },
-  ]);
+  
+  // Persistent state - automatically saved and restored
+  const [activeTab, setActiveTab] = usePersistentState<TabType>('water_intake_active_tab', 'Today');
+  const [entries, setEntries] = usePersistentState<WaterEntry[]>('water_intake_entries', []);
 
-  const handleAddWater = () => {
+  const handleAddWater = async () => {
     const amount = parseFloat(waterAmount);
     if (isNaN(amount) || amount <= 0) return;
 
@@ -63,10 +53,10 @@ const WaterIntakeScreen: React.FC = () => {
     const newEntry: WaterEntry = {
       id: Date.now().toString(),
       liters: amount,
-      timestamp,
+      timestamp: timestamp.toISOString(), // Store as ISO string
     };
 
-    setEntries([newEntry, ...entries]);
+    await setEntries((prev) => [newEntry, ...prev]);
     setWaterAmount('');
     setSelectedTime(0);
   };
@@ -85,7 +75,10 @@ const WaterIntakeScreen: React.FC = () => {
         const endTime = i === 0 ? now : new Date(now.getTime() - endHour * 60 * 60 * 1000);
 
         const periodTotal = entries
-          .filter((e) => e.timestamp >= startTime && e.timestamp < endTime)
+          .filter((e) => {
+            const entryDate = new Date(e.timestamp);
+            return entryDate >= startTime && entryDate < endTime;
+          })
           .reduce((sum, e) => sum + e.liters, 0);
 
         values.push(periodTotal);
@@ -105,7 +98,10 @@ const WaterIntakeScreen: React.FC = () => {
         const dayEnd = new Date(date.setHours(23, 59, 59, 999));
 
         const dayTotal = entries
-          .filter((e) => e.timestamp >= dayStart && e.timestamp <= dayEnd)
+          .filter((e) => {
+            const entryDate = new Date(e.timestamp);
+            return entryDate >= dayStart && entryDate <= dayEnd;
+          })
           .reduce((sum, e) => sum + e.liters, 0);
 
         values.push(dayTotal);
@@ -127,7 +123,10 @@ const WaterIntakeScreen: React.FC = () => {
         labels.push(`W${i + 1}`);
 
         const periodTotal = entries
-          .filter((e) => e.timestamp >= startDate && e.timestamp <= endDate)
+          .filter((e) => {
+            const entryDate = new Date(e.timestamp);
+            return entryDate >= startDate && entryDate <= endDate;
+          })
           .reduce((sum, e) => sum + e.liters, 0);
 
         values.push(periodTotal / daysPerGroup);
@@ -150,13 +149,13 @@ const WaterIntakeScreen: React.FC = () => {
 
     if (activeTab === 'Today') {
       const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-      filteredEntries = entries.filter((e) => e.timestamp >= twelveHoursAgo);
+      filteredEntries = entries.filter((e) => new Date(e.timestamp) >= twelveHoursAgo);
     } else if (activeTab === 'Weekly') {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      filteredEntries = entries.filter((e) => e.timestamp >= sevenDaysAgo);
+      filteredEntries = entries.filter((e) => new Date(e.timestamp) >= sevenDaysAgo);
     } else {
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      filteredEntries = entries.filter((e) => e.timestamp >= thirtyDaysAgo);
+      filteredEntries = entries.filter((e) => new Date(e.timestamp) >= thirtyDaysAgo);
     }
 
     const total = filteredEntries.reduce((sum, e) => sum + e.liters, 0);
@@ -314,7 +313,8 @@ const WaterIntakeScreen: React.FC = () => {
     );
   };
 
-  const formatTime = (date: Date): string => {
+  const formatTime = (timestamp: string): string => {
+    const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
@@ -466,7 +466,12 @@ const WaterIntakeScreen: React.FC = () => {
                   <Text style={styles.entryTime}>{formatTime(entry.timestamp)}</Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.entryDeleteButton}>
+              <TouchableOpacity
+                style={styles.entryDeleteButton}
+                onPress={async () => {
+                  await setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+                }}
+              >
                 <Ionicons name="trash-outline" size={18} color="#FF6B6B" />
               </TouchableOpacity>
             </View>

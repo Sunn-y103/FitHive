@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { usePersistentState } from '../hooks/usePersistentState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -75,15 +76,16 @@ const getFertilityStatus = (daysUntilPeriod: number, cycleLength: number): strin
 const PeriodCycleScreen: React.FC = () => {
   const navigation = useNavigation();
   
-  // State for selected date in week view
-  const [selectedDateIndex, setSelectedDateIndex] = useState(5); // Saturday selected by default
-  
-  // State for period tracking - stored as ISO string for easier manipulation
-  // TODO: Replace with AsyncStorage for persistence
-  const [lastPeriodDate, setLastPeriodDate] = useState<Date>(
-    new Date(Date.now() - 16 * 24 * 60 * 60 * 1000) // 16 days ago
+  // Persistent state - automatically saved and restored
+  const [selectedDateIndex, setSelectedDateIndex] = usePersistentState<number>('period_cycle_selected_date', 5);
+  const [lastPeriodDateISO, setLastPeriodDateISO] = usePersistentState<string>(
+    'period_cycle_last_date',
+    new Date(Date.now() - 16 * 24 * 60 * 60 * 1000).toISOString()
   );
-  const [cycleLength, setCycleLength] = useState(28);
+  const [cycleLength, setCycleLength] = usePersistentState<number>('period_cycle_length', 28);
+  
+  // Convert ISO string to Date for calculations
+  const lastPeriodDate = useMemo(() => new Date(lastPeriodDateISO), [lastPeriodDateISO]);
   
   // Modal state
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -115,7 +117,7 @@ const PeriodCycleScreen: React.FC = () => {
   };
   
   // Save modal values
-  const handleSaveModal = () => {
+  const handleSaveModal = async () => {
     const day = parseInt(tempLastPeriodDay, 10);
     const month = parseInt(tempLastPeriodMonth, 10);
     const newCycleLength = parseInt(tempCycleLength, 10);
@@ -130,8 +132,8 @@ const PeriodCycleScreen: React.FC = () => {
         newDate.setFullYear(newDate.getFullYear() - 1);
       }
       
-      setLastPeriodDate(newDate);
-      setCycleLength(newCycleLength);
+      await setLastPeriodDateISO(newDate.toISOString());
+      await setCycleLength(newCycleLength);
       setIsModalVisible(false);
     }
   };
