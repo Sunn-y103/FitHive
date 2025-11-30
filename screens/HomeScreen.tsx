@@ -8,11 +8,20 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 import MissionCard from '../components/MissionCard';
 import HighlightCard from '../components/HighlightCard';
 import ScoreCard from '../components/ScoreCard';
 
+type RootStackParamList = {
+  AllHealthData: undefined;
+};
+
+type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList>;
+
 const HomeScreen: React.FC = () => {
+  const navigation = useNavigation<HomeScreenNavigationProp>();
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -41,9 +50,9 @@ const HomeScreen: React.FC = () => {
           <View style={styles.highlightsGrid}>
             <View style={styles.highlightItem}>
             <HighlightCard
-              icon="walk-outline"
-              metric="Steps"
-              value="11,857"
+              icon="water-outline"
+              metric="Water Intake"
+              value="6 Litre"
               updateTime="updated 15 min ago"
               backgroundColor="#A992F6"
             />
@@ -59,8 +68,8 @@ const HomeScreen: React.FC = () => {
             </View>
             <View style={styles.highlightItem}>
             <HighlightCard
-              icon="moon-outline"
-              metric="Sleep"
+              icon="barbell-outline"
+              metric="Workout"
               value="7 h 31 min"
               updateTime="updated a day ago"
               backgroundColor="#1E3A5F"
@@ -82,7 +91,10 @@ const HomeScreen: React.FC = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Overview</Text>
-            <TouchableOpacity style={styles.allDataButton}>
+            <TouchableOpacity 
+              style={styles.allDataButton}
+              onPress={() => navigation.navigate('AllHealthData')}
+            >
               <Text style={styles.allDataText}>All Data</Text>
             </TouchableOpacity>
           </View>
