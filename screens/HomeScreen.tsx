@@ -13,9 +13,11 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import MissionCard from '../components/MissionCard';
 import HighlightCard from '../components/HighlightCard';
 import ScoreCard from '../components/ScoreCard';
+import FloatingAIButton from '../components/FloatingAIButton';
 
 type RootStackParamList = {
   AllHealthData: undefined;
+  AIChat: undefined;
 };
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -104,6 +106,9 @@ const HomeScreen: React.FC = () => {
           />
         </View>
       </ScrollView>
+      
+      {/* Floating AI Chat Button */}
+      <FloatingAIButton />
     </SafeAreaView>
   );
 };

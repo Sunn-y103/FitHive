@@ -8,6 +8,7 @@ import AllHealthDataScreen from '../screens/AllHealthDataScreen';
 import WaterIntakeScreen from '../screens/WaterIntakeScreen';
 import SleepScreen from '../screens/SleepScreen';
 import PeriodCycleScreen from '../screens/PeriodCycleScreen';
+import AIChatScreen from '../screens/AIChatScreen';
 import BottomTabs from './BottomTabs';
 
 export type RootStackParamList = {
@@ -19,6 +20,7 @@ export type RootStackParamList = {
   WaterIntake: undefined;
   Sleep: undefined;
   PeriodCycle: undefined;
+  AIChat: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -41,6 +43,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="WaterIntake" component={WaterIntakeScreen} />
         <Stack.Screen name="Sleep" component={SleepScreen} />
         <Stack.Screen name="PeriodCycle" component={PeriodCycleScreen} />
+        <Stack.Screen name="AIChat" component={AIChatScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
