@@ -10,8 +10,9 @@ import SleepScreen from '../screens/SleepScreen';
 import PeriodCycleScreen from '../screens/PeriodCycleScreen';
 import AIChatScreen from '../screens/AIChatScreen';
 import WorkoutCameraScreen from '../screens/WorkoutCameraScreen';
+import CreateChallengeScreen from '../screens/CreateChallengeScreen';
+import ChallengeDetailsScreen from '../screens/ChallengeDetailsScreen';
 import BottomTabs from './BottomTabs';
-
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
@@ -22,21 +23,15 @@ export type RootStackParamList = {
   Sleep: undefined;
   PeriodCycle: undefined;
   AIChat: undefined;
+  CreateChallenge: undefined;
+  ChallengeDetails: { challengeId: string };
   WorkoutCamera: { exerciseType: 'pushup' | 'curl' | 'squat' };
 };
-
 const Stack = createStackNavigator<RootStackParamList>();
-
 const AppNavigator: React.FC = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="Splash"
-        screenOptions={{
-          headerShown: false,
-          cardStyle: { backgroundColor: '#F7F7FA' },
-        }}
-      >
+      <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false, cardStyle: { backgroundColor: '#F7F7FA' } }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignUp" component={SignUpScreen} />
@@ -47,6 +42,8 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="PeriodCycle" component={PeriodCycleScreen} />
         <Stack.Screen name="AIChat" component={AIChatScreen} />
         <Stack.Screen name="WorkoutCamera" component={WorkoutCameraScreen} />
+        <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
+        <Stack.Screen name="ChallengeDetails" component={ChallengeDetailsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

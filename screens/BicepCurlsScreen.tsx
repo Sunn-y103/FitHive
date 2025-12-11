@@ -117,52 +117,85 @@ const BicepCurlsScreen: React.FC = () => {
   }, []);
 
   /**
-   * Convert camera frame to ImageData for MediaPipe
-   * This is a helper to bridge expo-camera with MediaPipe
+   * Get video element from CameraView (web only)
    */
-  const frameToImageData = async (frame: any): Promise<ImageData | null> => {
-    try {
-      // For web/Expo, we need to convert the frame to ImageData
-      // This is a simplified version - in production, you might need
-      // to use expo-gl or another method to get pixel data
-      
-      // Note: expo-camera doesn't directly provide ImageData
-      // For now, we'll use a canvas-based approach
-      // In a real implementation, you might use expo-gl or react-native-vision-camera
-      
-      // Placeholder: Return null and handle in actual implementation
-      // The actual conversion depends on your platform and camera setup
+  const getVideoElement = (): HTMLVideoElement | null => {
+    if (Platform.OS !== 'web') {
       return null;
+    }
+    
+    try {
+      // Access the underlying video element from CameraView
+      // On web, CameraView renders a <video> element
+      const cameraElement = cameraRef.current;
+      if (!cameraElement) {
+        return null;
+      }
+
+      // Find the video element in the DOM
+      // CameraView on web creates a video element
+      const videoElement = (cameraElement as any)?.nativeView?.querySelector?.('video') ||
+                          document.querySelector('video');
+      
+      return videoElement as HTMLVideoElement | null;
+    } catch (error) {
+      console.error('❌ Error getting video element:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Convert video frame to ImageData for MediaPipe (web)
+   */
+  const frameToImageData = (videoElement: HTMLVideoElement): ImageData | null => {
+    try {
+      if (!videoElement || videoElement.readyState !== HTMLMediaElement.HAVE_ENOUGH_DATA) {
+        return null;
+      }
+
+      // Create canvas to extract frame
+      const canvas = document.createElement('canvas');
+      canvas.width = videoElement.videoWidth || 640;
+      canvas.height = videoElement.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        return null;
+      }
+      
+      // Draw video frame to canvas
+      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      
+      // Extract ImageData
+      return ctx.getImageData(0, 0, canvas.width, canvas.height);
     } catch (error) {
       console.error('❌ Error converting frame:', error);
       return null;
     }
   };
 
+
   /**
-   * Process camera frame with pose detection
-   * Python equivalent: Main loop in bicepCurlCounter.py
+   * Handle camera ready event
+   */
+  const handleCameraReady = useCallback(() => {
+    console.log('📹 Camera ready');
+    setCameraReady(true);
+  }, []);
+
+
+  /**
+   * Process frame with pose detection
    */
   const processFrame = useCallback(
-    async (frame: any) => {
-      if (!poseDetector || !cameraReady || isProcessing) {
+    async (imageData: ImageData) => {
+      if (!poseDetector || isProcessing) {
         return;
       }
 
       setIsProcessing(true);
 
       try {
-        // Convert frame to ImageData (platform-specific)
-        // For web: frame can be used directly
-        // For native: need to convert using expo-gl or similar
-        const imageData = await frameToImageData(frame);
-
-        if (!imageData) {
-          // Fallback: Skip this frame
-          setIsProcessing(false);
-          return;
-        }
-
         // Detect pose (Python: img = detector.findPose(img))
         const timestamp = performance.now();
         const result = await poseDetector.processFrame(imageData, timestamp);
@@ -188,16 +221,51 @@ const BicepCurlsScreen: React.FC = () => {
         setIsProcessing(false);
       }
     },
-    [poseDetector, cameraReady, isProcessing]
+    [poseDetector, isProcessing]
   );
 
   /**
-   * Handle camera ready event
+   * Start frame processing when camera and detector are ready (web only)
    */
-  const handleCameraReady = useCallback(() => {
-    console.log('📹 Camera ready');
-    setCameraReady(true);
-  }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !poseDetector || !cameraReady) {
+      return;
+    }
+
+    console.log('🔄 Starting frame processing loop...');
+    let animationFrameId: number | null = null;
+    let lastProcessTime = 0;
+    const FPS = 30; // Process 30 frames per second
+    const frameInterval = 1000 / FPS;
+
+    const processLoop = () => {
+      const now = performance.now();
+      
+      // Throttle to target FPS
+      if (now - lastProcessTime >= frameInterval) {
+        const videoElement = getVideoElement();
+        if (videoElement && videoElement.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA) {
+          const imageData = frameToImageData(videoElement);
+          if (imageData && !isProcessing) {
+            processFrame(imageData);
+          }
+        }
+        lastProcessTime = now;
+      }
+      
+      animationFrameId = requestAnimationFrame(processLoop);
+    };
+
+    // Start the loop
+    animationFrameId = requestAnimationFrame(processLoop);
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [poseDetector, cameraReady, processFrame, isProcessing]);
 
   /**
    * Reset rep counter

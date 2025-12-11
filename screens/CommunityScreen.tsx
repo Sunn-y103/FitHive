@@ -19,8 +19,19 @@ import * as ImagePicker from 'expo-image-picker';
 // import * as FileSystem from 'expo-file-system';
 // import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
+import { useChallenges } from '../contexts/ChallengeContext';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+type RootStackParamList = {
+  ChallengeDetails: { challengeId: string };
+  CreateChallenge: undefined;
+  Community: undefined;
+};
+
+type CommunityScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Community'>;
 
 // ============================================
 // APP COLOR PALETTE (exact match with rest of app)
@@ -61,8 +72,8 @@ const COLORS = {
 };
 
 
-// Mock data for challenges
-const MOCK_CHALLENGES = [
+// Default mock challenges (fallback if context is empty)
+const DEFAULT_CHALLENGES = [
   {
     id: '1',
     title: 'Ares workout challenge',
@@ -226,22 +237,36 @@ const PostCard: React.FC<{
 interface Challenge {
   id: string;
   title: string;
-  dateRange: string;
+  dateRange?: string;
+  time?: string;
   participants: number;
-  image: string;
+  image: string | null;
 }
 
-const ChallengeCard: React.FC<{ challenge: Challenge }> = ({ challenge }) => {
+const ChallengeCard: React.FC<{ 
+  challenge: Challenge;
+  onPress: () => void;
+}> = ({ challenge, onPress }) => {
+  const displayDate = challenge.time || challenge.dateRange || 'TBD';
+  
   return (
     <TouchableOpacity
       style={styles.challengeCard}
-      accessibilityLabel={`${challenge.title}, ${challenge.dateRange}, ${challenge.participants} challengers joined`}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityLabel={`${challenge.title}, ${displayDate}, ${challenge.participants} challengers joined`}
     >
-      <Image
-        source={{ uri: challenge.image }}
-        style={styles.challengeImage}
-        resizeMode="cover"
-      />
+      {challenge.image ? (
+        <Image
+          source={{ uri: challenge.image }}
+          style={styles.challengeImage}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[styles.challengeImage, styles.challengeImagePlaceholder]}>
+          <Ionicons name="trophy" size={48} color={COLORS.primary} />
+        </View>
+      )}
       <LinearGradient
         colors={['transparent', 'rgba(30, 58, 95, 0.85)']}
         style={styles.challengeOverlay}
@@ -249,7 +274,7 @@ const ChallengeCard: React.FC<{ challenge: Challenge }> = ({ challenge }) => {
       <View style={styles.challengeContent}>
         <View>
           <Text style={styles.challengeTitle}>{challenge.title}</Text>
-          <Text style={styles.challengeDate}>{challenge.dateRange}</Text>
+          <Text style={styles.challengeDate}>{displayDate}</Text>
         </View>
         <Text style={styles.challengeParticipants}>
           {challenge.participants} challengers joined
@@ -260,8 +285,22 @@ const ChallengeCard: React.FC<{ challenge: Challenge }> = ({ challenge }) => {
 };
 
 const CommunityScreen: React.FC = () => {
+  const navigation = useNavigation<CommunityScreenNavigationProp>();
+  const { challenges } = useChallenges();
   const [activeTab, setActiveTab] = useState<'social' | 'challenges'>('social');
   const [showNewPostModal, setShowNewPostModal] = useState(false);
+  
+  // Combine context challenges with default challenges (for demo)
+  // In production, you'd fetch from Supabase
+  const allChallenges = challenges.length > 0 
+    ? challenges.map(c => ({
+        id: c.id,
+        title: c.title,
+        dateRange: c.time,
+        participants: c.participants,
+        image: c.image,
+      }))
+    : DEFAULT_CHALLENGES;
   const [showPostMenu, setShowPostMenu] = useState<string | null>(null);
   const [newPostContent, setNewPostContent] = useState('');
   
@@ -1136,15 +1175,47 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
   const renderChallenges = () => (
     <View style={styles.challengesContainer}>
       {/* Challenges Header */}
-      <Text style={styles.challengesHeading}>Ready to achieve 'god' status?</Text>
-      <Text style={styles.challengesSubheading}>
-        Select community challenges to join and give your workout its needed flair!
-      </Text>
+      <View style={styles.challengesHeader}>
+        <View>
+          <Text style={styles.challengesHeading}>Ready to achieve 'god' status?</Text>
+          <Text style={styles.challengesSubheading}>
+            Select community challenges to join and give your workout its needed flair!
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.createChallengeButton}
+          onPress={() => navigation.navigate('CreateChallenge')}
+          accessibilityLabel="Create new challenge"
+        >
+          <Ionicons name="add-circle" size={20} color={COLORS.white} />
+          <Text style={styles.createChallengeButtonText}>Create</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Challenges List */}
-      {MOCK_CHALLENGES.map((challenge) => (
-        <ChallengeCard key={challenge.id} challenge={challenge} />
-      ))}
+      {allChallenges.length > 0 ? (
+        allChallenges.map((challenge) => (
+          <ChallengeCard
+            key={challenge.id}
+            challenge={challenge}
+            onPress={() => navigation.navigate('ChallengeDetails', { challengeId: challenge.id })}
+          />
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Ionicons name="trophy-outline" size={64} color={COLORS.border} />
+          <Text style={styles.emptyStateTitle}>No challenges yet</Text>
+          <Text style={styles.emptyStateText}>
+            Be the first to create a challenge!
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyStateButton}
+            onPress={() => navigation.navigate('CreateChallenge')}
+          >
+            <Text style={styles.emptyStateButtonText}>Create Challenge</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 
@@ -1690,6 +1761,23 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyStateButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   
   // ============================================
@@ -1697,6 +1785,12 @@ const styles = StyleSheet.create({
   // ============================================
   challengesContainer: {
     flex: 1,
+  },
+  challengesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   challengesHeading: {
     fontSize: 18,
@@ -1707,8 +1801,33 @@ const styles = StyleSheet.create({
   challengesSubheading: {
     fontSize: 14,
     color: COLORS.textSecondary,         // #6F6F7B
-    marginBottom: 20,
     lineHeight: 20,
+    flex: 1,
+    marginRight: 12,
+  },
+  createChallengeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  createChallengeButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  challengeImagePlaceholder: {
+    backgroundColor: COLORS.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   challengeCard: {
     height: 160,
