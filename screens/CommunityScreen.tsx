@@ -16,8 +16,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import { decode } from 'base64-arraybuffer';
+// import * as FileSystem from 'expo-file-system';
+// import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -315,66 +315,236 @@ const CommunityScreen: React.FC = () => {
     }
   };
 
-  // Upload image to Supabase Storage
-  const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
-    try {
-      setUploadingImage(true);
-      console.log('📤 Uploading image to Supabase Storage...');
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
+  // Upload image to Supabase Storage — uses fetch().arrayBuffer() (compatible with RN)
+const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
+  try {
+    setUploadingImage(true);
+    console.log('📤 Uploading image to Supabase Storage...');
 
-      // Create unique filename with images folder path
-      const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
-      const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
 
-      // Read file as base64 using expo-file-system (React Native compatible)
-      console.log('📖 Reading image file...');
-      // @ts-ignore - expo-file-system encoding type
-      const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: 'base64',
+    // Build unique filename
+    const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+    const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
+
+    // Fetch the file and get an ArrayBuffer
+    console.log('📖 Fetching file and creating arrayBuffer...');
+    const fetchRes = await fetch(imageUri);
+    if (!fetchRes.ok) throw new Error(`Failed to fetch file: ${fetchRes.status}`);
+    const arrayBuffer = await fetchRes.arrayBuffer(); // works when blob() is not available
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    console.log('📤 Uploading ArrayBuffer (Uint8Array) to Supabase...');
+    const { data, error } = await supabase.storage
+      .from('community-posts')
+      .upload(fileName, uint8Array, {
+        contentType: fetchRes.headers.get('Content-Type') || `image/${fileExt}`,
+        upsert: false,
       });
 
-      // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
-      console.log('🔄 Converting base64 to ArrayBuffer...');
-      const arrayBuffer = decode(base64Data);
-
-      console.log('📤 Uploading to Supabase Storage...');
-
-      // Upload using Supabase Storage client to community-posts bucket
-      const { data, error } = await supabase.storage
-        .from('community-posts')
-        .upload(fileName, arrayBuffer, {
-          contentType: `image/${fileExt}`,
-          upsert: false,
-        });
-
-      if (error) {
-        console.error('❌ Supabase Storage upload error:', error);
-        throw error;
-      }
-
-      console.log('✅ Image uploaded:', data.path);
-
-      // Get public URL from community-posts bucket
-      const { data: publicUrlData } = supabase.storage
-        .from('community-posts')
-        .getPublicUrl(data.path);
-
-      console.log('🔗 Public URL:', publicUrlData.publicUrl);
-      return publicUrlData.publicUrl;
-
-    } catch (error) {
-      console.error('❌ Error uploading image:', error);
-      Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
-      return null;
-    } finally {
-      setUploadingImage(false);
+    if (error) {
+      console.error('❌ Supabase Storage upload error:', error);
+      throw error;
     }
-  };
+
+    console.log('✅ Image uploaded:', data.path);
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('community-posts')
+      .getPublicUrl(data.path);
+
+    console.log('🔗 Public URL:', publicUrlData.publicUrl);
+    return publicUrlData.publicUrl;
+  } catch (err) {
+    console.error('❌ Error uploading image:', err);
+    Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+    return null;
+  } finally {
+    setUploadingImage(false);
+  }
+};
+
+
+
+//   // Upload image to Supabase Storage — modern fetch->blob approach
+// const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
+//   try {
+//     setUploadingImage(true);
+//     console.log('📤 Uploading image to Supabase Storage...');
+
+//     // Get current user
+//     const { data: { user } } = await supabase.auth.getUser();
+//     if (!user) throw new Error('User not authenticated');
+
+//     // Build unique filename
+//     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+//     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
+
+//     // Fetch the file and get a blob
+//     console.log('📖 Fetching file and creating blob...');
+//     const fetchRes = await fetch(imageUri);
+//     if (!fetchRes.ok) throw new Error(`Failed to fetch file: ${fetchRes.status}`);
+//     const blob = await fetchRes.blob();
+
+//     // Upload the blob to Supabase Storage
+//     console.log('📤 Uploading blob to Supabase...');
+//     const { data, error } = await supabase.storage
+//       .from('community-posts')
+//       .upload(fileName, blob, {
+//         contentType: blob.type || `image/${fileExt}`,
+//         upsert: false,
+//       });
+
+//     if (error) {
+//       console.error('❌ Supabase Storage upload error:', error);
+//       throw error;
+//     }
+
+//     console.log('✅ Image uploaded:', data.path);
+
+//     // Get public URL
+//     const { data: publicUrlData } = supabase.storage
+//       .from('community-posts')
+//       .getPublicUrl(data.path);
+
+//     console.log('🔗 Public URL:', publicUrlData.publicUrl);
+//     return publicUrlData.publicUrl;
+//   } catch (err) {
+//     console.error('❌ Error uploading image:', err);
+//     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+//     return null;
+//   } finally {
+//     setUploadingImage(false);
+//   }
+// };
+
+
+
+
+  // // Upload image to Supabase Storage — React Native compatible approach
+  // const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
+  //   try {
+  //     setUploadingImage(true);
+  //     console.log('📤 Uploading image to Supabase Storage...');
+
+  //     // Get current user
+  //     const { data: { user } } = await supabase.auth.getUser();
+  //     if (!user) throw new Error('User not authenticated');
+
+  //     // Build unique filename
+  //     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+  //     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
+
+  //     // Read file as base64 using expo-file-system (React Native compatible)
+  //     console.log('📖 Reading image file...');
+  //     // @ts-ignore - expo-file-system encoding type
+  //     const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+  //       encoding: 'base64',
+  //     });
+
+  //     // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
+  //     console.log('🔄 Converting base64 to ArrayBuffer...');
+  //     const arrayBuffer = decode(base64Data);
+
+  //     // Upload using Supabase Storage client
+  //     console.log('📤 Uploading to Supabase Storage...');
+  //     const { data, error } = await supabase.storage
+  //       .from('community-posts')
+  //       .upload(fileName, arrayBuffer, {
+  //         contentType: `image/${fileExt}`,
+  //         upsert: false,
+  //       });
+
+  //     if (error) {
+  //       console.error('❌ Supabase Storage upload error:', error);
+  //       throw error;
+  //     }
+
+  //     console.log('✅ Image uploaded:', data.path);
+
+  //     // Get public URL
+  //     const { data: publicUrlData } = supabase.storage
+  //       .from('community-posts')
+  //       .getPublicUrl(data.path);
+
+  //     console.log('🔗 Public URL:', publicUrlData.publicUrl);
+  //     return publicUrlData.publicUrl;
+  //   } catch (err) {
+  //     console.error('❌ Error uploading image:', err);
+  //     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+  //     return null;
+  //   } finally {
+  //     setUploadingImage(false);
+  //   }
+  // };
+
+
+
+
+  // // Upload image to Supabase Storage
+  // const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
+  //   try {
+  //     setUploadingImage(true);
+  //     console.log('📤 Uploading image to Supabase Storage...');
+
+  //     // Get current user
+  //     const { data: { user } } = await supabase.auth.getUser();
+  //     if (!user) {
+  //       throw new Error('User not authenticated');
+  //     }
+
+  //     // Create unique filename with images folder path
+  //     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+  //     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
+
+  //     // Read file as base64 using expo-file-system (React Native compatible)
+  //     console.log('📖 Reading image file...');
+  //     // @ts-ignore - expo-file-system encoding type
+  //     const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+  //       encoding: 'base64',
+  //     });
+
+  //     // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
+  //     console.log('🔄 Converting base64 to ArrayBuffer...');
+  //     const arrayBuffer = decode(base64Data);
+
+  //     console.log('📤 Uploading to Supabase Storage...');
+
+  //     // Upload using Supabase Storage client to community-posts bucket
+  //     const { data, error } = await supabase.storage
+  //       .from('community-posts')
+  //       .upload(fileName, arrayBuffer, {
+  //         contentType: `image/${fileExt}`,
+  //         upsert: false,
+  //       });
+
+  //     if (error) {
+  //       console.error('❌ Supabase Storage upload error:', error);
+  //       throw error;
+  //     }
+
+  //     console.log('✅ Image uploaded:', data.path);
+
+  //     // Get public URL from community-posts bucket
+  //     const { data: publicUrlData } = supabase.storage
+  //       .from('community-posts')
+  //       .getPublicUrl(data.path);
+
+  //     console.log('🔗 Public URL:', publicUrlData.publicUrl);
+  //     return publicUrlData.publicUrl;
+
+  //   } catch (error) {
+  //     console.error('❌ Error uploading image:', error);
+  //     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+  //     return null;
+  //   } finally {
+  //     setUploadingImage(false);
+  //   }
+  // };
 
   // Fetch posts from Supabase with user profile data
   const fetchPosts = async () => {
