@@ -249,19 +249,19 @@ const BicepCurlsScreen: React.FC = () => {
   // Request camera permission
   if (!permission) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContent}>
+      <View style={styles.container}>
+        <SafeAreaView style={styles.centerContent} edges={['top', 'bottom']}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Requesting camera permission...</Text>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContent}>
+      <View style={styles.container}>
+        <SafeAreaView style={styles.centerContent} edges={['top', 'bottom']}>
           <Ionicons name="camera-outline" size={64} color={COLORS.textSecondary} />
           <Text style={styles.permissionTitle}>Camera Permission Required</Text>
           <Text style={styles.permissionText}>
@@ -270,20 +270,20 @@ const BicepCurlsScreen: React.FC = () => {
           <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   // Show loading while initializing
   if (isInitializing) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContent}>
+      <View style={styles.container}>
+        <SafeAreaView style={styles.centerContent} edges={['top', 'bottom']}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Initializing pose detection...</Text>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -292,17 +292,17 @@ const BicepCurlsScreen: React.FC = () => {
   const barValue = getBarValue(repState.angle, 240); // Bar height for visualization
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Camera View - Must be direct child with overlay as children */}
+    <View style={styles.container}>
+      {/* Camera View - CameraView doesn't support children, use absolute positioning for overlay */}
       <CameraView
         ref={cameraRef}
         style={styles.camera}
         facing="front"
         onCameraReady={handleCameraReady}
-      >
-
-        {/* Overlay - Rep Counter UI */}
-        <View style={styles.overlay} pointerEvents="box-none">
+      />
+      
+      {/* Overlay - Rep Counter UI (absolute positioned) */}
+      <SafeAreaView style={styles.overlay} edges={['top']} pointerEvents="box-none">
           {/* Top Bar - Rep Count */}
           <View style={styles.topBar}>
             <View style={styles.repCountContainer}>
@@ -364,9 +364,8 @@ const BicepCurlsScreen: React.FC = () => {
               <Text style={styles.endButtonText}>End Workout</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </CameraView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 };
 
@@ -378,6 +377,7 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
     width: '100%',
+    height: '100%',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
