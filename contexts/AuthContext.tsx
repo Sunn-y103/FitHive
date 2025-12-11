@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { runNetworkDiagnostics } from '../utils/networkCheck';
 
 interface AuthContextType {
   session: Session | null;
@@ -31,43 +32,131 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    let mounted = true;
 
-    // Listen for auth changes
+    // Get initial session with error handling
+    const initializeAuth = async () => {
+      try {
+        console.log('🔐 Initializing auth...');
+        
+        // Run network diagnostics if first time (helps debug network issues)
+        if (__DEV__) {
+          runNetworkDiagnostics().catch(console.error);
+        }
+        
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('❌ Error getting session:', error);
+          // Don't throw - just set loading to false so app can continue
+        }
+        
+        if (mounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
+          console.log('✅ Auth initialized:', session ? 'User logged in' : 'No session');
+        }
+      } catch (error: any) {
+        console.error('❌ Network error during auth init:', {
+          message: error?.message,
+          name: error?.name,
+          code: error?.code,
+        });
+        // Set loading to false even on error so app doesn't hang
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    // Listen for auth changes with error handling
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔄 Auth state changed:', event);
+      if (mounted) {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      console.log('🔑 Attempting sign in...');
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        console.error('❌ Sign in error:', error.message);
+      } else {
+        console.log('✅ Sign in successful');
+      }
+      
+      return { error };
+    } catch (error: any) {
+      console.error('❌ Network error during sign in:', {
+        message: error?.message,
+        name: error?.name,
+      });
+      return { 
+        error: {
+          message: error?.message || 'Network request failed. Please check your internet connection.',
+          name: 'NetworkError',
+        } as AuthError
+      };
+    }
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      console.log('📝 Attempting sign up...');
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      
+      if (error) {
+        console.error('❌ Sign up error:', error.message);
+      } else {
+        console.log('✅ Sign up successful');
+      }
+      
+      return { error };
+    } catch (error: any) {
+      console.error('❌ Network error during sign up:', {
+        message: error?.message,
+        name: error?.name,
+      });
+      return { 
+        error: {
+          message: error?.message || 'Network request failed. Please check your internet connection.',
+          name: 'NetworkError',
+        } as AuthError
+      };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      console.log('🚪 Signing out...');
+      await supabase.auth.signOut();
+      console.log('✅ Sign out successful');
+    } catch (error: any) {
+      console.error('❌ Error during sign out:', error);
+      // Don't throw - sign out should always complete
+    }
   };
 
   const value: AuthContextType = {

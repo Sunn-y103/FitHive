@@ -101,6 +101,16 @@ const formatNumber = (num: number): string => {
   return num.toString();
 };
 
+// Comment Interface
+interface Comment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  text: string;
+  created_at: string;
+  author_name?: string; // Optional - will be computed from user data
+}
+
 // Post Card Component
 interface Post {
   id: string;
@@ -118,8 +128,16 @@ interface Post {
   isOwner: boolean;
 }
 
-const PostCard: React.FC<{ post: Post; onMenuPress: (postId: string) => void }> = ({ post, onMenuPress }) => {
-  const [liked, setLiked] = useState(false);
+const PostCard: React.FC<{ 
+  post: Post; 
+  onMenuPress: (postId: string) => void;
+  onLike: (postId: string, isLiked: boolean) => Promise<void>;
+  onComment: (postId: string) => void;
+  isLiked: boolean;
+}> = ({ post, onMenuPress, onLike, onComment, isLiked: initialLiked }) => {
+  const [liked, setLiked] = useState(initialLiked);
+  const [imageError, setImageError] = useState(false);
+  const [liking, setLiking] = useState(false);
 
   return (
     <View style={styles.postCard}>
@@ -146,12 +164,17 @@ const PostCard: React.FC<{ post: Post; onMenuPress: (postId: string) => void }> 
       {/* Post Content */}
       <Text style={styles.postContent}>{post.content}</Text>
 
-      {/* Post Image */}
-      {post.image && (
+      {/* Post Image - Only displays if image URL exists and no error occurred */}
+      {post.image && !imageError && (
         <Image
           source={{ uri: post.image }}
           style={styles.postImage}
           resizeMode="cover"
+          onError={() => {
+            console.warn('⚠️ Failed to load post image:', post.image);
+            setImageError(true);
+          }}
+          accessibilityLabel="Post image"
         />
       )}
 
@@ -159,21 +182,28 @@ const PostCard: React.FC<{ post: Post; onMenuPress: (postId: string) => void }> 
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => setLiked(!liked)}
+          onPress={async () => {
+            if (liking) return;
+            const newLikedState = !liked;
+            setLiked(newLikedState);
+            await onLike(post.id, newLikedState);
+          }}
+          disabled={liking}
           accessibilityLabel={`Like post, ${formatNumber(post.likes)} likes`}
         >
           <Ionicons
-            name={liked ? 'heart' : 'heart'}
+            name={liked ? 'heart' : 'heart-outline'}
             size={18}
             color={liked ? COLORS.error : COLORS.primary}
           />
           <Text style={[styles.actionText, liked && styles.likedText]}>
-            {formatNumber(liked ? post.likes + 1 : post.likes)}
+            {formatNumber(post.likes)}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.actionButton}
+          onPress={() => onComment(post.id)}
           accessibilityLabel={`${formatNumber(post.comments)} comments`}
         >
           <Ionicons name="chatbubble-outline" size={18} color={COLORS.textSecondary} />
@@ -242,7 +272,20 @@ const CommunityScreen: React.FC = () => {
   // State for image upload
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-
+  
+  // State for editing post
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editPostContent, setEditPostContent] = useState('');
+  
+  // Track which posts are liked by current user
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  
+  // State for comments
+  const [showCommentsModal, setShowCommentsModal] = useState<string | null>(null);
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [newComment, setNewComment] = useState('');
+  const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
+  
   // Handle image selection
   const handlePickImage = async () => {
     try {
@@ -256,7 +299,7 @@ const CommunityScreen: React.FC = () => {
 
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'], // Updated to use array format instead of deprecated MediaTypeOptions
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8, // Compress to reduce upload time
@@ -284,9 +327,9 @@ const CommunityScreen: React.FC = () => {
         throw new Error('User not authenticated');
       }
 
-      // Create unique filename
+      // Create unique filename with images folder path
       const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
 
       // Read file as base64 using expo-file-system (React Native compatible)
       console.log('📖 Reading image file...');
@@ -301,9 +344,9 @@ const CommunityScreen: React.FC = () => {
 
       console.log('📤 Uploading to Supabase Storage...');
 
-      // Upload using Supabase Storage client
+      // Upload using Supabase Storage client to community-posts bucket
       const { data, error } = await supabase.storage
-        .from('post-images')
+        .from('community-posts')
         .upload(fileName, arrayBuffer, {
           contentType: `image/${fileExt}`,
           upsert: false,
@@ -316,9 +359,9 @@ const CommunityScreen: React.FC = () => {
 
       console.log('✅ Image uploaded:', data.path);
 
-      // Get public URL
+      // Get public URL from community-posts bucket
       const { data: publicUrlData } = supabase.storage
-        .from('post-images')
+        .from('community-posts')
         .getPublicUrl(data.path);
 
       console.log('🔗 Public URL:', publicUrlData.publicUrl);
@@ -342,25 +385,44 @@ const CommunityScreen: React.FC = () => {
       // Get current user for isOwner check
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       
-      // Simple query - no joins needed!
-      const { data, error } = await supabase
+      if (!currentUser) {
+        setPosts([]);
+        setLoadingPosts(false);
+        return;
+      }
+      
+      // Fetch posts
+      const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('❌ Error fetching posts:', error);
+      if (postsError) {
+        console.error('❌ Error fetching posts:', postsError);
         setPosts([]);
         return;
       }
 
-      console.log('✅ Posts fetched:', data?.length || 0);
+      // Fetch user's liked posts
+      const { data: likesData, error: likesError } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('user_id', currentUser.id);
+
+      const likedSet = new Set<string>();
+      if (!likesError && likesData) {
+        likesData.forEach((like: any) => likedSet.add(like.post_id));
+        setLikedPosts(likedSet);
+      }
+
+      console.log('✅ Posts fetched:', postsData?.length || 0);
 
       // Map Supabase data to Post interface
-      const mappedPosts: Post[] = (data || []).map((post: any) => {
+      const mappedPosts: Post[] = (postsData || []).map((post: any) => {
         // Read author_name directly from post (denormalized approach)
         const username = post.author_name || 'User';
         const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=A992F6&color=fff&size=128`;
+        const isLiked = likedSet.has(post.id);
         
         return {
           id: post.id,
@@ -375,7 +437,7 @@ const CommunityScreen: React.FC = () => {
           likes: post.like_count || 0, // Your DB uses like_count (singular)
           comments: post.comment_count || 0, // Your DB uses comment_count (singular)
           shares: post.share_count || 0, // Your DB uses share_count (singular)
-          isOwner: currentUser ? post.user_id === currentUser.id : false,
+          isOwner: post.user_id === currentUser.id,
         };
       });
 
@@ -411,6 +473,10 @@ const CommunityScreen: React.FC = () => {
   }, []);
 
   const handleNewPost = () => {
+    setEditingPostId(null);
+    setEditPostContent('');
+    setNewPostContent('');
+    setSelectedImage(null);
     setShowNewPostModal(true);
   };
 
@@ -482,6 +548,9 @@ const CommunityScreen: React.FC = () => {
             text: text,
             author_name: authorName,
             media_url: imageUrl, // Store image URL
+            media_type: imageUrl ? 'image' : null, // Set media_type according to schema
+            like_count: 0, // Initialize like_count to 0
+            comment_count: 0, // Initialize comment_count to 0
           }
         ])
         .select();
@@ -511,6 +580,345 @@ const CommunityScreen: React.FC = () => {
     setShowPostMenu(postId);
   };
 
+  // Handle like/unlike post
+  const handleLike = async (postId: string, isLiked: boolean) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please log in to like posts');
+        return;
+      }
+
+      if (isLiked) {
+        // Insert like
+        const { error: insertError } = await supabase
+          .from('post_likes')
+          .insert([{ post_id: postId, user_id: user.id }]);
+
+        if (insertError) {
+          console.error('❌ Error liking post:', insertError);
+          Alert.alert('Error', 'Failed to like post. Please try again.');
+          return;
+        }
+
+        // Update like_count in posts table
+        const { data: postData, error: fetchError } = await supabase
+          .from('posts')
+          .select('like_count')
+          .eq('id', postId)
+          .single();
+
+        if (!fetchError && postData) {
+          const newLikeCount = (postData.like_count || 0) + 1;
+          const { error: updateError } = await supabase
+            .from('posts')
+            .update({ like_count: newLikeCount })
+            .eq('id', postId);
+
+          if (updateError) {
+            console.error('❌ Error updating like_count:', updateError);
+            // Don't return - still update UI, but log the error
+            console.warn('⚠️ Like inserted but count update failed. Count may be out of sync.');
+          } else {
+            console.log('✅ Like count updated successfully:', newLikeCount);
+          }
+        }
+
+        // Update local state immediately for better UX
+        setLikedPosts(prev => new Set(prev).add(postId));
+        setPosts(prev => prev.map(p => 
+          p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p
+        ));
+        
+        // Refresh feed after a short delay to ensure database update is committed
+        setTimeout(() => {
+          fetchPosts();
+        }, 300);
+      } else {
+        // Remove like
+        const { error: deleteError } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', user.id);
+
+        if (deleteError) {
+          console.error('❌ Error unliking post:', deleteError);
+          Alert.alert('Error', 'Failed to unlike post. Please try again.');
+          return;
+        }
+
+        // Update like_count in posts table
+        const { data: postData, error: fetchError } = await supabase
+          .from('posts')
+          .select('like_count')
+          .eq('id', postId)
+          .single();
+
+        if (!fetchError && postData) {
+          const newLikeCount = Math.max(0, (postData.like_count || 0) - 1);
+          const { error: updateError } = await supabase
+            .from('posts')
+            .update({ like_count: newLikeCount })
+            .eq('id', postId);
+
+          if (updateError) {
+            console.error('❌ Error updating like_count:', updateError);
+            console.warn('⚠️ Like deleted but count update failed. Count may be out of sync.');
+          } else {
+            console.log('✅ Like count updated successfully:', newLikeCount);
+          }
+        }
+
+        // Update local state immediately for better UX
+        setLikedPosts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(postId);
+          return newSet;
+        });
+        setPosts(prev => prev.map(p => 
+          p.id === postId ? { ...p, likes: Math.max(0, (p.likes || 0) - 1) } : p
+        ));
+        
+        // Refresh feed after a short delay to ensure database update is committed
+        setTimeout(() => {
+          fetchPosts();
+        }, 300);
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error liking post:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    }
+  };
+
+  // Handle delete post
+  const handleDeletePost = async (postId: string) => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('posts')
+                .delete()
+                .eq('id', postId);
+
+              if (error) {
+                console.error('❌ Error deleting post:', error);
+                Alert.alert('Error', 'Failed to delete post. Please try again.');
+                return;
+              }
+
+              console.log('✅ Post deleted successfully');
+              setShowPostMenu(null);
+              fetchPosts(); // Refresh feed
+            } catch (error) {
+              console.error('❌ Unexpected error deleting post:', error);
+              Alert.alert('Error', 'An unexpected error occurred.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle edit post
+  const handleEditPost = (postId: string) => {
+    const post = posts.find(p => p.id === postId);
+    if (post) {
+      setEditingPostId(postId);
+      setEditPostContent(post.content);
+      setShowPostMenu(null);
+      setShowNewPostModal(true);
+    }
+  };
+
+  // Handle save edited post
+  const handleSaveEdit = async () => {
+    if (!editingPostId || !editPostContent.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ 
+          text: editPostContent.trim()
+        })
+        .eq('id', editingPostId);
+
+      if (error) {
+        console.error('❌ Error updating post:', error);
+        Alert.alert('Error', 'Failed to update post. Please try again.');
+        return;
+      }
+
+      console.log('✅ Post updated successfully');
+      setEditingPostId(null);
+      setEditPostContent('');
+      setShowNewPostModal(false);
+      fetchPosts(); // Refresh feed
+    } catch (error) {
+      console.error('❌ Unexpected error updating post:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    }
+  };
+
+  // Fetch comments for a post and enrich with author names
+  const fetchComments = async (postId: string) => {
+    try {
+      setLoadingComments(prev => ({ ...prev, [postId]: true }));
+      
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('❌ Error fetching comments:', error);
+        return;
+      }
+
+      // Get current user for name matching
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const currentUserName = currentUser 
+        ? (currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User')
+        : 'User';
+
+      // Enrich comments with author names
+      // For current user's comments, use their name
+      // For others, try to get from posts table (if commenter is post author) or use fallback
+      const enrichedComments = (data || []).map((comment: any) => {
+        let authorName = 'User';
+        
+        // If it's the current user's comment, use their name
+        if (currentUser && comment.user_id === currentUser.id) {
+          authorName = currentUserName;
+        } else {
+          // Try to get author name from the post if commenter is the post author
+          const post = posts.find(p => p.id === postId);
+          if (post && post.author.id === comment.user_id) {
+            authorName = post.author.name;
+          } else {
+            // Fallback: use "User" for other users
+            authorName = 'User';
+          }
+        }
+        
+        return {
+          ...comment,
+          author_name: authorName,
+        };
+      });
+
+      setComments(prev => ({ ...prev, [postId]: enrichedComments }));
+    } catch (error) {
+      console.error('❌ Unexpected error fetching comments:', error);
+    } finally {
+      setLoadingComments(prev => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  // Handle open comments modal
+  const handleOpenComments = (postId: string) => {
+    setShowCommentsModal(postId);
+    if (!comments[postId]) {
+      fetchComments(postId);
+    }
+  };
+
+  // Handle add comment
+  const handleAddComment = async (postId: string) => {
+    if (!newComment.trim()) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'Please log in to comment');
+        return;
+      }
+
+      // Insert comment (without author_name - column doesn't exist in schema)
+      const { data: commentData, error: insertError } = await supabase
+        .from('comments')
+        .insert([
+          {
+            post_id: postId,
+            user_id: user.id,
+            text: newComment.trim(),
+          }
+        ])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('❌ Error adding comment:', insertError);
+        Alert.alert('Error', 'Failed to add comment. Please try again.');
+        return;
+      }
+
+      // Update comment_count in posts table
+      const { data: postData, error: fetchError } = await supabase
+        .from('posts')
+        .select('comment_count')
+        .eq('id', postId)
+        .single();
+
+      if (!fetchError && postData) {
+        const newCommentCount = (postData.comment_count || 0) + 1;
+        const { error: updateError } = await supabase
+          .from('posts')
+          .update({ comment_count: newCommentCount })
+          .eq('id', postId);
+
+        if (updateError) {
+          console.error('❌ Error updating comment_count:', updateError);
+          // Don't return - still add comment to UI, but log the error
+          console.warn('⚠️ Comment inserted but count update failed. Count may be out of sync.');
+        } else {
+          console.log('✅ Comment count updated successfully:', newCommentCount);
+        }
+      }
+
+      // Add comment to local state with author name
+      if (commentData) {
+        const authorName = 
+          user.user_metadata?.full_name || 
+          user.email?.split('@')[0] || 
+          'User';
+        
+        const enrichedComment = {
+          ...commentData,
+          author_name: authorName,
+        };
+        
+        setComments(prev => ({
+          ...prev,
+          [postId]: [...(prev[postId] || []), enrichedComment]
+        }));
+        
+        // Update post comment count locally
+        setPosts(prev => prev.map(p => 
+          p.id === postId ? { ...p, comments: (p.comments || 0) + 1 } : p
+        ));
+      }
+
+      setNewComment('');
+      
+      // Refresh feed after a short delay to ensure database update is committed
+      setTimeout(() => {
+        fetchPosts();
+      }, 300);
+    } catch (error) {
+      console.error('❌ Unexpected error adding comment:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    }
+  };
+
   const renderSocialFeed = () => (
     <View style={styles.feedContainer}>
       {/* Posts Header */}
@@ -533,7 +941,14 @@ const CommunityScreen: React.FC = () => {
       ) : posts.length > 0 ? (
         /* Posts List */
         posts.map((post) => (
-          <PostCard key={post.id} post={post} onMenuPress={handleMenuPress} />
+          <PostCard 
+            key={post.id} 
+            post={post} 
+            onMenuPress={handleMenuPress}
+            onLike={handleLike}
+            onComment={handleOpenComments}
+            isLiked={likedPosts.has(post.id)}
+          />
         ))
       ) : (
         /* Empty State */
@@ -637,9 +1052,17 @@ const CommunityScreen: React.FC = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Post</Text>
+              <Text style={styles.modalTitle}>
+                {editingPostId ? 'Edit Post' : 'New Post'}
+              </Text>
               <TouchableOpacity
-                onPress={() => setShowNewPostModal(false)}
+                onPress={() => {
+                  setShowNewPostModal(false);
+                  setEditingPostId(null);
+                  setEditPostContent('');
+                  setNewPostContent('');
+                  setSelectedImage(null);
+                }}
                 accessibilityLabel="Close modal"
               >
                 <Ionicons name="close" size={24} color={COLORS.navy} />
@@ -650,11 +1073,11 @@ const CommunityScreen: React.FC = () => {
               placeholder="What's on your mind?"
               placeholderTextColor={COLORS.textSecondary}
               multiline
-              value={newPostContent}
-              onChangeText={setNewPostContent}
+              value={editingPostId ? editPostContent : newPostContent}
+              onChangeText={editingPostId ? setEditPostContent : setNewPostContent}
             />
-            {/* Image Preview */}
-            {selectedImage && (
+            {/* Image Preview - Only show for new posts, not when editing */}
+            {selectedImage && !editingPostId && (
               <View style={styles.imagePreviewContainer}>
                 <Image 
                   source={{ uri: selectedImage }} 
@@ -670,42 +1093,61 @@ const CommunityScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
             )}
+            
+            {/* Show existing image when editing */}
+            {editingPostId && (() => {
+              const post = posts.find(p => p.id === editingPostId);
+              return post?.image ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image 
+                    source={{ uri: post.image }} 
+                    style={styles.imagePreview}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.editImageNote}>Image cannot be changed when editing</Text>
+                </View>
+              ) : null;
+            })()}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.addImageButton}
-                onPress={handlePickImage}
-                disabled={uploadingImage}
-                accessibilityLabel="Add image to post"
-              >
-                {uploadingImage ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                ) : (
-                  <>
-                    <Ionicons 
-                      name={selectedImage ? "checkmark-circle" : "image-outline"} 
-                      size={24} 
-                      color={selectedImage ? COLORS.primary : COLORS.primary} 
-                    />
-                    <Text style={styles.addImageText}>
-                      {selectedImage ? 'Change Image' : 'Add Image'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {!editingPostId && (
+                <TouchableOpacity
+                  style={styles.addImageButton}
+                  onPress={handlePickImage}
+                  disabled={uploadingImage}
+                  accessibilityLabel="Add image to post"
+                >
+                  {uploadingImage ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <>
+                      <Ionicons 
+                        name={selectedImage ? "checkmark-circle" : "image-outline"} 
+                        size={24} 
+                        color={selectedImage ? COLORS.primary : COLORS.primary} 
+                      />
+                      <Text style={styles.addImageText}>
+                        {selectedImage ? 'Change Image' : 'Add Image'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[
                   styles.submitPostButton,
-                  (!newPostContent.trim() || uploadingImage) && styles.submitPostButtonDisabled,
+                  ((editingPostId ? !editPostContent.trim() : !newPostContent.trim()) || uploadingImage) && styles.submitPostButtonDisabled,
                 ]}
-                onPress={handlePostSubmit}
-                disabled={!newPostContent.trim() || uploadingImage}
-                accessibilityLabel="Submit post"
+                onPress={editingPostId ? handleSaveEdit : handlePostSubmit}
+                disabled={(editingPostId ? !editPostContent.trim() : !newPostContent.trim()) || uploadingImage}
+                accessibilityLabel={editingPostId ? "Save changes" : "Submit post"}
               >
                 {uploadingImage ? (
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
-                  <Text style={styles.submitPostButtonText}>Post</Text>
+                  <Text style={styles.submitPostButtonText}>
+                    {editingPostId ? 'Save' : 'Post'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -729,8 +1171,9 @@ const CommunityScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
-                console.log('Edit post:', showPostMenu);
-                setShowPostMenu(null);
+                if (showPostMenu) {
+                  handleEditPost(showPostMenu);
+                }
               }}
               accessibilityLabel="Edit post"
             >
@@ -741,8 +1184,9 @@ const CommunityScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
-                console.log('Delete post:', showPostMenu);
-                setShowPostMenu(null);
+                if (showPostMenu) {
+                  handleDeletePost(showPostMenu);
+                }
               }}
               accessibilityLabel="Delete post"
             >
@@ -751,6 +1195,94 @@ const CommunityScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Comments Modal */}
+      <Modal
+        visible={showCommentsModal !== null}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setShowCommentsModal(null);
+          setNewComment('');
+        }}
+      >
+        <View style={styles.commentsModalOverlay}>
+          <View style={styles.commentsModalContent}>
+            <View style={styles.commentsModalHeader}>
+              <Text style={styles.commentsModalTitle}>Comments</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowCommentsModal(null);
+                  setNewComment('');
+                }}
+                accessibilityLabel="Close comments"
+              >
+                <Ionicons name="close" size={24} color={COLORS.navy} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.commentsList}>
+              {showCommentsModal && loadingComments[showCommentsModal] ? (
+                <View style={styles.loadingState}>
+                  <Text style={styles.loadingText}>Loading comments...</Text>
+                </View>
+              ) : showCommentsModal && comments[showCommentsModal]?.length > 0 ? (
+                comments[showCommentsModal].map((comment) => (
+                  <View key={comment.id} style={styles.commentItem}>
+                    <View style={styles.commentHeader}>
+                      <Text style={styles.commentAuthor}>
+                        {comment.author_name || 'User'}
+                      </Text>
+                      <Text style={styles.commentTime}>
+                        {formatTimestamp(comment.created_at)}
+                      </Text>
+                    </View>
+                    <Text style={styles.commentText}>{comment.text}</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.emptyState}>
+                  <Ionicons name="chatbubbles-outline" size={48} color={COLORS.border} />
+                  <Text style={styles.emptyStateText}>No comments yet</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Be the first to comment!
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.commentInputContainer}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Write a comment..."
+                placeholderTextColor={COLORS.textSecondary}
+                value={newComment}
+                onChangeText={setNewComment}
+                multiline
+              />
+              <TouchableOpacity
+                style={[
+                  styles.sendCommentButton,
+                  !newComment.trim() && styles.sendCommentButtonDisabled
+                ]}
+                onPress={() => {
+                  if (showCommentsModal && newComment.trim()) {
+                    handleAddComment(showCommentsModal);
+                  }
+                }}
+                disabled={!newComment.trim()}
+                accessibilityLabel="Send comment"
+              >
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color={newComment.trim() ? COLORS.white : COLORS.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1189,6 +1721,115 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: COLORS.error,                 // #FF6B6B
+  },
+  editImageNote: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    color: COLORS.white,
+    padding: 8,
+    borderRadius: 8,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  
+  // ============================================
+  // COMMENTS MODAL
+  // ============================================
+  commentsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  commentsModalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    padding: 24,
+  },
+  commentsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  commentsModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+  },
+  commentsList: {
+    maxHeight: 400,
+    marginBottom: 16,
+  },
+  commentItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.navy,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  commentText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+    paddingTop: 12,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.navy,
+    maxHeight: 100,
+    marginRight: 8,
+  },
+  sendCommentButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendCommentButtonDisabled: {
+    backgroundColor: COLORS.border,
+  },
+  emptyStateSubtext: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
 
