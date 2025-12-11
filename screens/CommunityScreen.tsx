@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,15 @@ import {
   Modal,
   TextInput,
   Dimensions,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
+import { supabase } from '../lib/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,54 +60,6 @@ const COLORS = {
   shadowPurple: '#A992F6',
 };
 
-// Mock data for posts
-const MOCK_POSTS = [
-  {
-    id: '1',
-    author: {
-      id: 'user1',
-      name: 'Ken Adams',
-      avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-    },
-    timestamp: '12:42pm',
-    content: "Went full beast mode today! I'm going all out this year",
-    image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80',
-    likes: 30200,
-    comments: 20100,
-    shares: 8500,
-    isOwner: false,
-  },
-  {
-    id: '2',
-    author: {
-      id: 'user2',
-      name: 'Barney Stinson',
-      avatar: 'https://randomuser.me/api/portraits/men/44.jpg',
-    },
-    timestamp: '12:42pm',
-    content: "Went full beast mode today! I'm going all out this year",
-    image: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?w=600&q=80',
-    likes: 30200,
-    comments: 20100,
-    shares: 8500,
-    isOwner: true,
-  },
-  {
-    id: '3',
-    author: {
-      id: 'user3',
-      name: 'Regina Phalange',
-      avatar: 'https://randomuser.me/api/portraits/women/65.jpg',
-    },
-    timestamp: '12:42pm',
-    content: "Went full beast mode today! I'm going all out this year",
-    image: null,
-    likes: 15400,
-    comments: 8200,
-    shares: 3100,
-    isOwner: false,
-  },
-];
 
 // Mock data for challenges
 const MOCK_CHALLENGES = [
@@ -276,16 +234,277 @@ const CommunityScreen: React.FC = () => {
   const [showNewPostModal, setShowNewPostModal] = useState(false);
   const [showPostMenu, setShowPostMenu] = useState<string | null>(null);
   const [newPostContent, setNewPostContent] = useState('');
+  
+  // State for posts and loading
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  
+  // State for image upload
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Handle image selection
+  const handlePickImage = async () => {
+    try {
+      // Request media library permissions
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library to attach images.');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'], // Updated to use array format instead of deprecated MediaTypeOptions
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8, // Compress to reduce upload time
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setSelectedImage(result.assets[0].uri);
+        console.log('📷 Image selected:', result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('❌ Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  // Upload image to Supabase Storage
+  const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
+    try {
+      setUploadingImage(true);
+      console.log('📤 Uploading image to Supabase Storage...');
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Create unique filename
+      const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+      // Read file as base64 using expo-file-system (React Native compatible)
+      console.log('📖 Reading image file...');
+      // @ts-ignore - expo-file-system encoding type
+      const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: 'base64',
+      });
+
+      // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
+      console.log('🔄 Converting base64 to ArrayBuffer...');
+      const arrayBuffer = decode(base64Data);
+
+      console.log('📤 Uploading to Supabase Storage...');
+
+      // Upload using Supabase Storage client
+      const { data, error } = await supabase.storage
+        .from('post-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt}`,
+          upsert: false,
+        });
+
+      if (error) {
+        console.error('❌ Supabase Storage upload error:', error);
+        throw error;
+      }
+
+      console.log('✅ Image uploaded:', data.path);
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('post-images')
+        .getPublicUrl(data.path);
+
+      console.log('🔗 Public URL:', publicUrlData.publicUrl);
+      return publicUrlData.publicUrl;
+
+    } catch (error) {
+      console.error('❌ Error uploading image:', error);
+      Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Fetch posts from Supabase with user profile data
+  const fetchPosts = async () => {
+    try {
+      setLoadingPosts(true);
+      console.log('📡 Fetching posts from Supabase...');
+      
+      // Get current user for isOwner check
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      
+      // Simple query - no joins needed!
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error fetching posts:', error);
+        setPosts([]);
+        return;
+      }
+
+      console.log('✅ Posts fetched:', data?.length || 0);
+
+      // Map Supabase data to Post interface
+      const mappedPosts: Post[] = (data || []).map((post: any) => {
+        // Read author_name directly from post (denormalized approach)
+        const username = post.author_name || 'User';
+        const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=A992F6&color=fff&size=128`;
+        
+        return {
+          id: post.id,
+          author: {
+            id: post.user_id || 'unknown',
+            name: username,
+            avatar: defaultAvatar, // Generated avatar based on username
+          },
+          timestamp: formatTimestamp(post.created_at),
+          content: post.text || '',
+          image: post.media_url || null, // Your DB uses media_url
+          likes: post.like_count || 0, // Your DB uses like_count (singular)
+          comments: post.comment_count || 0, // Your DB uses comment_count (singular)
+          shares: post.share_count || 0, // Your DB uses share_count (singular)
+          isOwner: currentUser ? post.user_id === currentUser.id : false,
+        };
+      });
+
+      setPosts(mappedPosts);
+    } catch (error) {
+      console.error('❌ Unexpected error fetching posts:', error);
+      setPosts([]);
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
+
+  // Format timestamp to relative time
+  const formatTimestamp = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Fetch posts on mount
+  useEffect(() => {
+    fetchPosts();
+  }, []);
 
   const handleNewPost = () => {
     setShowNewPostModal(true);
   };
 
-  const handlePostSubmit = () => {
-    // Handle post submission
-    console.log('New post:', newPostContent);
-    setNewPostContent('');
-    setShowNewPostModal(false);
+  const handlePostSubmit = async () => {
+    const text = newPostContent.trim();
+    if (!text) return;
+
+    try {
+      console.log('📝 Submitting new post...');
+
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('❌ User not authenticated');
+        Alert.alert('Error', 'Please log in to create a post');
+        return;
+      }
+
+      // Get author name from user metadata or email
+      const authorName = 
+        user.user_metadata?.full_name || 
+        user.email?.split('@')[0] || 
+        'User';
+
+      console.log('👤 Author name:', authorName);
+
+      // Upload image if one is selected
+      let imageUrl: string | null = null;
+      if (selectedImage) {
+        imageUrl = await uploadImageToStorage(selectedImage);
+        if (!imageUrl) {
+          // Upload failed, ask user if they want to continue without image
+          Alert.alert(
+            'Image Upload Failed',
+            'Would you like to post without the image?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Post Anyway', 
+                onPress: async () => {
+                  await createPost(user.id, text, authorName, null);
+                }
+              },
+            ]
+          );
+          return;
+        }
+      }
+
+      // Create the post
+      await createPost(user.id, text, authorName, imageUrl);
+
+    } catch (error) {
+      console.error('❌ Unexpected error submitting post:', error);
+      Alert.alert('Error', 'An unexpected error occurred while creating your post.');
+    }
+  };
+
+  // Helper function to create post in database
+  const createPost = async (userId: string, text: string, authorName: string, imageUrl: string | null) => {
+    try {
+      // Insert post into Supabase with author_name and image
+      const { data, error } = await supabase
+        .from('posts')
+        .insert([
+          {
+            user_id: userId,
+            text: text,
+            author_name: authorName,
+            media_url: imageUrl, // Store image URL
+          }
+        ])
+        .select();
+
+      if (error) {
+        console.error('❌ Error creating post:', error);
+        Alert.alert('Error', 'Failed to create post. Please try again.');
+        return;
+      }
+
+      console.log('✅ Post created successfully:', data);
+
+      // Clear input, image, and close modal
+      setNewPostContent('');
+      setSelectedImage(null);
+      setShowNewPostModal(false);
+
+      // Refresh feed immediately
+      fetchPosts();
+    } catch (error) {
+      console.error('❌ Unexpected error creating post:', error);
+      alert('An error occurred. Please try again.');
+    }
   };
 
   const handleMenuPress = (postId: string) => {
@@ -306,10 +525,26 @@ const CommunityScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Posts List */}
-      {MOCK_POSTS.map((post) => (
-        <PostCard key={post.id} post={post} onMenuPress={handleMenuPress} />
-      ))}
+      {/* Loading State */}
+      {loadingPosts ? (
+        <View style={styles.loadingState}>
+          <Text style={styles.loadingText}>Loading posts...</Text>
+        </View>
+      ) : posts.length > 0 ? (
+        /* Posts List */
+        posts.map((post) => (
+          <PostCard key={post.id} post={post} onMenuPress={handleMenuPress} />
+        ))
+      ) : (
+        /* Empty State */
+        <View style={styles.emptyState}>
+          <Ionicons name="chatbubbles-outline" size={64} color={COLORS.border} />
+          <Text style={styles.emptyStateTitle}>No posts yet</Text>
+          <Text style={styles.emptyStateText}>
+            Be the first to share your fitness journey with the community!
+          </Text>
+        </View>
+      )}
     </View>
   );
 
@@ -418,24 +653,60 @@ const CommunityScreen: React.FC = () => {
               value={newPostContent}
               onChangeText={setNewPostContent}
             />
+            {/* Image Preview */}
+            {selectedImage && (
+              <View style={styles.imagePreviewContainer}>
+                <Image 
+                  source={{ uri: selectedImage }} 
+                  style={styles.imagePreview}
+                  resizeMode="cover"
+                />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                  accessibilityLabel="Remove image"
+                >
+                  <Ionicons name="close-circle" size={28} color={COLORS.white} />
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.addImageButton}
+                onPress={handlePickImage}
+                disabled={uploadingImage}
                 accessibilityLabel="Add image to post"
               >
-                <Ionicons name="image-outline" size={24} color={COLORS.primary} />
-                <Text style={styles.addImageText}>Add Image</Text>
+                {uploadingImage ? (
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                ) : (
+                  <>
+                    <Ionicons 
+                      name={selectedImage ? "checkmark-circle" : "image-outline"} 
+                      size={24} 
+                      color={selectedImage ? COLORS.primary : COLORS.primary} 
+                    />
+                    <Text style={styles.addImageText}>
+                      {selectedImage ? 'Change Image' : 'Add Image'}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   styles.submitPostButton,
-                  !newPostContent.trim() && styles.submitPostButtonDisabled,
+                  (!newPostContent.trim() || uploadingImage) && styles.submitPostButtonDisabled,
                 ]}
                 onPress={handlePostSubmit}
-                disabled={!newPostContent.trim()}
+                disabled={!newPostContent.trim() || uploadingImage}
                 accessibilityLabel="Submit post"
               >
-                <Text style={styles.submitPostButtonText}>Post</Text>
+                {uploadingImage ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={styles.submitPostButtonText}>Post</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -684,6 +955,42 @@ const styles = StyleSheet.create({
   },
   
   // ============================================
+  // LOADING STATE
+  // ============================================
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
+  
+  // ============================================
+  // EMPTY STATE
+  // ============================================
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  
+  // ============================================
   // CHALLENGES
   // ============================================
   challengesContainer: {
@@ -801,6 +1108,26 @@ const styles = StyleSheet.create({
     color: COLORS.primary,               // #A992F6
     fontSize: 14,
     fontWeight: '600',
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    backgroundColor: COLORS.borderLight,
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 14,
   },
   submitPostButton: {
     backgroundColor: COLORS.primary,     // #A992F6 - main purple

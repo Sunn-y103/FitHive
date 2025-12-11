@@ -29,7 +29,7 @@ const COLORS = {
 };
 
 
-
+ 
 
 const AI_CHAT_URL = "https://skqcggiuulwrjiclaibw.supabase.co/functions/v1/ai-chat";
 

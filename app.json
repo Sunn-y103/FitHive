@@ -16,14 +16,21 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fithive.app"
+      "bundleIdentifier": "com.fithive.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "FitHive needs access to your photo library to let you share images in your posts."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7F7FA"
       },
-      "package": "com.fithive.app"
+      "package": "com.fithive.app",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
