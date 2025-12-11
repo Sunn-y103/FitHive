@@ -9,6 +9,7 @@ import WaterIntakeScreen from '../screens/WaterIntakeScreen';
 import SleepScreen from '../screens/SleepScreen';
 import PeriodCycleScreen from '../screens/PeriodCycleScreen';
 import AIChatScreen from '../screens/AIChatScreen';
+import WorkoutCameraScreen from '../screens/WorkoutCameraScreen';
 import BottomTabs from './BottomTabs';
 
 export type RootStackParamList = {
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   Sleep: undefined;
   PeriodCycle: undefined;
   AIChat: undefined;
+  WorkoutCamera: { exerciseType: 'pushup' | 'curl' | 'squat' };
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -44,6 +46,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="Sleep" component={SleepScreen} />
         <Stack.Screen name="PeriodCycle" component={PeriodCycleScreen} />
         <Stack.Screen name="AIChat" component={AIChatScreen} />
+        <Stack.Screen name="WorkoutCamera" component={WorkoutCameraScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

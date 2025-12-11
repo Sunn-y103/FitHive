@@ -18,7 +18,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.fithive.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "FitHive needs access to your photo library to let you share images in your posts."
+        "NSPhotoLibraryUsageDescription": "FitHive needs access to your photo library to let you share images in your posts.",
+        "NSCameraUsageDescription": "FitHive needs access to your camera to track your workouts and count exercise repetitions."
       }
     },
     "android": {
@@ -29,7 +30,8 @@
       "package": "com.fithive.app",
       "permissions": [
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA"
       ]
     },
     "web": {

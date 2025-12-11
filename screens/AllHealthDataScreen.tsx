@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,15 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { supabase } from '../lib/supabase';
+import { fetchWorkoutHistory } from '../lib/supabase/saveWorkoutResult';
+import WorkoutSelectionModal from '../components/WorkoutSelectionModal';
+import { ExerciseType } from '../hooks/useExercisePose';
 
 interface HealthDataItemProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -19,6 +24,8 @@ interface HealthDataItemProps {
   value: string;
   unit: string;
   onPress?: () => void;
+  isWorkout?: boolean;
+  workoutInfo?: { exercise: string; date: string } | null;
 }
 
 const HealthDataItem: React.FC<HealthDataItemProps> = ({
@@ -29,6 +36,8 @@ const HealthDataItem: React.FC<HealthDataItemProps> = ({
   value,
   unit,
   onPress,
+  isWorkout = false,
+  workoutInfo,
 }) => {
   return (
     <TouchableOpacity style={styles.healthDataItem} onPress={onPress} activeOpacity={0.7}>
@@ -37,12 +46,28 @@ const HealthDataItem: React.FC<HealthDataItemProps> = ({
       </View>
       <View style={styles.healthDataContent}>
         <Text style={styles.healthDataTitle}>{title}</Text>
-        <View style={styles.valueRow}>
-          <Text style={styles.healthDataValue}>{value}</Text>
-          <Text style={styles.healthDataUnit}> {unit}</Text>
-        </View>
+        {isWorkout && workoutInfo ? (
+          <View>
+            <View style={styles.valueRow}>
+              <Text style={styles.healthDataValue}>{value}</Text>
+              <Text style={styles.healthDataUnit}> {unit}</Text>
+            </View>
+            <Text style={styles.workoutInfo}>{workoutInfo.exercise} • {workoutInfo.date}</Text>
+          </View>
+        ) : (
+          <View style={styles.valueRow}>
+            <Text style={styles.healthDataValue}>{value}</Text>
+            <Text style={styles.healthDataUnit}> {unit}</Text>
+          </View>
+        )}
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#C0C0C0" />
+      {isWorkout ? (
+        <View style={styles.startWorkoutButton}>
+          <Ionicons name="play-circle" size={24} color="#E74C3C" />
+        </View>
+      ) : (
+        <Ionicons name="chevron-forward" size={20} color="#C0C0C0" />
+      )}
     </TouchableOpacity>
   );
 };
@@ -51,12 +76,54 @@ type RootStackParamList = {
   WaterIntake: undefined;
   Sleep: undefined;
   PeriodCycle: undefined;
+  WorkoutCamera: { exerciseType: ExerciseType };
 };
 
 type AllHealthDataScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const AllHealthDataScreen: React.FC = () => {
   const navigation = useNavigation<AllHealthDataScreenNavigationProp>();
+  const [showWorkoutModal, setShowWorkoutModal] = useState(false);
+  const [latestWorkout, setLatestWorkout] = useState<{ reps: number; exercise: string; date: string } | null>(null);
+  const [loadingWorkout, setLoadingWorkout] = useState(true);
+
+  useEffect(() => {
+    loadLatestWorkout();
+  }, []);
+
+  const loadLatestWorkout = async () => {
+    try {
+      setLoadingWorkout(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoadingWorkout(false);
+        return;
+      }
+
+      const workouts = await fetchWorkoutHistory(user.id, 1);
+      if (workouts.length > 0) {
+        const workout = workouts[0];
+        const exerciseName = workout.exercise === 'pushup' ? 'Push-Ups' : 
+                            workout.exercise === 'curl' ? 'Bicep Curls' : 'Squats';
+        const date = new Date(workout.created_at);
+        const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        setLatestWorkout({
+          reps: workout.reps,
+          exercise: exerciseName,
+          date: formattedDate,
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error loading latest workout:', error);
+    } finally {
+      setLoadingWorkout(false);
+    }
+  };
+
+  const handleStartWorkout = (exerciseType: ExerciseType) => {
+    navigation.navigate('WorkoutCamera', { exerciseType });
+  };
 
   const healthData = [
     {
@@ -97,8 +164,9 @@ const AllHealthDataScreen: React.FC = () => {
       iconBackgroundColor: '#FFE5E5',
       iconColor: '#E74C3C',
       title: 'Workout',
-      value: '68',
-      unit: 'BPM',
+      value: loadingWorkout ? '...' : latestWorkout ? `${latestWorkout.reps}` : '0',
+      unit: latestWorkout ? 'reps' : 'Start',
+      isWorkout: true,
     },
     {
       id: '6',
@@ -147,6 +215,8 @@ const AllHealthDataScreen: React.FC = () => {
             title={item.title}
             value={item.value}
             unit={item.unit}
+            isWorkout={item.isWorkout}
+            workoutInfo={item.isWorkout && latestWorkout ? { exercise: latestWorkout.exercise, date: latestWorkout.date } : null}
             onPress={
               item.title === 'Water Intake' 
                 ? () => navigation.navigate('WaterIntake') 
@@ -154,11 +224,19 @@ const AllHealthDataScreen: React.FC = () => {
                   ? () => navigation.navigate('Sleep')
                   : item.title === 'Cycle tracking'
                     ? () => navigation.navigate('PeriodCycle')
-                    : undefined
+                    : item.title === 'Workout'
+                      ? () => setShowWorkoutModal(true)
+                      : undefined
             }
           />
         ))}
       </ScrollView>
+
+      <WorkoutSelectionModal
+        visible={showWorkoutModal}
+        onClose={() => setShowWorkoutModal(false)}
+        onSelectExercise={handleStartWorkout}
+      />
     </SafeAreaView>
   );
 };
@@ -265,6 +343,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#A992F6',
     fontWeight: '500',
+  },
+  startWorkoutButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  workoutInfo: {
+    fontSize: 12,
+    color: '#6F6F7B',
+    marginTop: 4,
   },
 });
 
