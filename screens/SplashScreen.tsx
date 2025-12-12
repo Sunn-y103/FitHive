@@ -3,12 +3,8 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../contexts/AuthContext';
-
-type RootStackParamList = {
-  Login: undefined;
-  Splash: undefined;
-  HomeTabs: undefined;
-};
+import { fetchProfile } from '../services/profileService';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
 type SplashScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Splash'>;
 
@@ -27,9 +23,17 @@ const SplashScreen: React.FC = () => {
 
     // Wait for auth to load, then navigate
     if (!loading) {
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (user) {
-          navigation.replace('HomeTabs');
+          // Check if user has completed onboarding
+          const profile = await fetchProfile();
+          const hasCompletedOnboarding = profile?.height && profile?.weight && profile?.gender;
+          
+          if (hasCompletedOnboarding) {
+            navigation.replace('HomeTabs');
+          } else {
+            navigation.replace('Onboarding');
+          }
         } else {
           navigation.replace('Login');
         }

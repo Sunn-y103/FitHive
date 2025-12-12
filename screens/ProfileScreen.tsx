@@ -16,9 +16,12 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { useImmediatePersistentState, usePersistentState } from '../hooks/usePersistentState';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { Storage } from '../utils/storage';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { fetchProfile, updateHealthFields } from '../services/profileService';
+import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Profile data interface
 interface ProfileData {
@@ -71,9 +74,10 @@ type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { signOut, user } = useAuth();
+  const [loadingProfile, setLoadingProfile] = useState(true);
   
-  // Profile state with immediate persistence (auto-saves as user types)
-  const [profile, setProfile] = useImmediatePersistentState<ProfileData>('profile', {
+  // Profile state - will be loaded from Supabase
+  const [profile, setProfile] = useState<ProfileData>({
     name: user?.email?.split('@')[0] || 'User',
     email: user?.email || '',
     age: '28',
@@ -81,6 +85,52 @@ const ProfileScreen: React.FC = () => {
     weight: '70',
     gender: 'Male',
   });
+
+  // Fetch profile from Supabase on mount and when user changes
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user) {
+        setLoadingProfile(false);
+        return;
+      }
+
+      try {
+        setLoadingProfile(true);
+        console.log('📥 Loading profile from Supabase...');
+        
+        // Fetch from Supabase
+        const supabaseProfile = await fetchProfile();
+        
+        if (supabaseProfile) {
+          // Also try to get age from AsyncStorage (since it's not in Supabase)
+          const storedAge = await AsyncStorage.getItem('user_age');
+          
+          setProfile({
+            name: supabaseProfile.full_name || supabaseProfile.username || user.email?.split('@')[0] || 'User',
+            email: supabaseProfile.email || user.email || '',
+            age: storedAge || '28',
+            height: supabaseProfile.height || '175',
+            weight: supabaseProfile.weight || '70',
+            gender: supabaseProfile.gender || 'Male',
+          });
+          console.log('✅ Profile loaded from Supabase');
+        } else {
+          // Fallback to user email if profile doesn't exist
+          setProfile(prev => ({
+            ...prev,
+            name: user.email?.split('@')[0] || 'User',
+            email: user.email || '',
+          }));
+        }
+      } catch (error) {
+        console.error('❌ Error loading profile:', error);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    loadProfile();
+  }, [user]);
 
   // Settings state with persistence
   const [notificationsEnabled, setNotificationsEnabled] = usePersistentState<boolean>('notificationsEnabled', true);
@@ -106,8 +156,8 @@ const ProfileScreen: React.FC = () => {
     setIsEditModalVisible(true);
   };
 
-  // Save profile changes - uses immediate persistence so auto-saves
-  const handleSaveProfile = () => {
+  // Save profile changes to Supabase
+  const handleSaveProfile = async () => {
     if (!editingProfile.name.trim()) {
       Alert.alert('Error', 'Name is required');
       return;
@@ -117,9 +167,48 @@ const ProfileScreen: React.FC = () => {
       return;
     }
     
-    // Save to persistent state (automatically saved immediately to AsyncStorage)
-    setProfile(editingProfile);
-    setIsEditModalVisible(false);
+    try {
+      // Update health fields in Supabase
+      const { error: healthError } = await updateHealthFields({
+        height: editingProfile.height,
+        weight: editingProfile.weight,
+        gender: editingProfile.gender,
+      });
+
+      if (healthError) {
+        console.error('❌ Error updating health fields:', healthError);
+        Alert.alert('Error', 'Failed to save some profile data. Please try again.');
+      }
+
+      // Update basic profile fields (name, email)
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: currentUser.id,
+            full_name: editingProfile.name,
+            email: editingProfile.email,
+            username: editingProfile.name.split(' ')[0] || editingProfile.email.split('@')[0],
+          });
+
+        if (profileError) {
+          console.error('❌ Error updating profile:', profileError);
+        }
+      }
+
+      // Save age to AsyncStorage (since it's not in Supabase schema)
+      await AsyncStorage.setItem('user_age', editingProfile.age);
+
+      // Update local state
+      setProfile(editingProfile);
+      setIsEditModalVisible(false);
+      
+      Alert.alert('Success', 'Profile updated successfully!');
+    } catch (error) {
+      console.error('❌ Error saving profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    }
   };
 
   // Get initials for avatar
@@ -184,22 +273,28 @@ const ProfileScreen: React.FC = () => {
 
         {/* Profile Card */}
         <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(profile.name)}</Text>
-            </View>
-            <TouchableOpacity style={styles.cameraButton}>
-              <Ionicons name="camera" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.profileName}>{profile.name}</Text>
-          <Text style={styles.profileEmail}>{profile.email || user?.email || 'No email'}</Text>
-          
-          <TouchableOpacity style={styles.editButton} onPress={handleOpenEdit}>
-            <Ionicons name="pencil" size={16} color="#FFFFFF" />
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </TouchableOpacity>
+          {loadingProfile ? (
+            <ActivityIndicator size="large" color="#A992F6" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{getInitials(profile.name)}</Text>
+                </View>
+                <TouchableOpacity style={styles.cameraButton}>
+                  <Ionicons name="camera" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+              
+              <Text style={styles.profileName}>{profile.name}</Text>
+              <Text style={styles.profileEmail}>{profile.email || user?.email || 'No email'}</Text>
+              
+              <TouchableOpacity style={styles.editButton} onPress={handleOpenEdit}>
+                <Ionicons name="pencil" size={16} color="#FFFFFF" />
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Stats Row */}

@@ -16,12 +16,8 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-
-type RootStackParamList = {
-  Login: undefined;
-  SignUp: undefined;
-  HomeTabs: undefined;
-};
+import { fetchProfile } from '../services/profileService';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -68,7 +64,15 @@ const LoginScreen: React.FC = () => {
     if (error) {
       Alert.alert('Login Failed', error.message || 'Invalid email or password');
     } else {
-      navigation.replace('HomeTabs');
+      // Check if user has completed onboarding
+      const profile = await fetchProfile();
+      const hasCompletedOnboarding = profile?.height && profile?.weight && profile?.gender;
+      
+      if (hasCompletedOnboarding) {
+        navigation.replace('HomeTabs');
+      } else {
+        navigation.replace('Onboarding');
+      }
     }
   };
 

@@ -12,6 +12,8 @@ import {
   Dimensions,
   Alert,
   ActivityIndicator,
+  FlatList,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -71,6 +73,13 @@ const COLORS = {
   shadowPurple: '#A992F6',
 };
 
+// Challenge Type for the Challenges area
+interface ChallengeData {
+  id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+}
 
 // Default mock challenges (fallback if context is empty)
 const DEFAULT_CHALLENGES = [
@@ -284,11 +293,127 @@ const ChallengeCard: React.FC<{
   );
 };
 
+// New Challenge Card Component for ChallengeData
+const ChallengeDataCard: React.FC<{
+  challenge: ChallengeData;
+  onPress: () => void;
+  isSelected: boolean;
+}> = ({ challenge, onPress, isSelected }) => {
+  // Format createdAt date
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.challengeDataCard,
+        isSelected && styles.challengeDataCardSelected,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityLabel={`${challenge.title}, created ${formatDate(challenge.createdAt)}`}
+    >
+      <View style={styles.challengeDataCardContent}>
+        <Text style={styles.challengeDataCardTitle} numberOfLines={1}>
+          {challenge.title}
+        </Text>
+        <Text style={styles.challengeDataCardDescription} numberOfLines={1}>
+          {challenge.description}
+        </Text>
+        <Text style={styles.challengeDataCardDate}>
+          {formatDate(challenge.createdAt)}
+        </Text>
+      </View>
+      <Ionicons 
+        name="chevron-forward" 
+        size={20} 
+        color={COLORS.textSecondary} 
+        style={styles.challengeDataCardArrow}
+      />
+    </TouchableOpacity>
+  );
+};
+
 const CommunityScreen: React.FC = () => {
   const navigation = useNavigation<CommunityScreenNavigationProp>();
   const { challenges } = useChallenges();
   const [activeTab, setActiveTab] = useState<'social' | 'challenges'>('social');
   const [showNewPostModal, setShowNewPostModal] = useState(false);
+  
+  // ============================================
+  // CHALLENGES AREA STATE MANAGEMENT
+  // ============================================
+  // Single source of truth for user-created challenges
+  const [challengesData, setChallengesData] = useState<ChallengeData[]>([]);
+  
+  // State for challenge details modal
+  const [selectedChallenge, setSelectedChallenge] = useState<ChallengeData | null>(null);
+  const [showChallengeDetailsModal, setShowChallengeDetailsModal] = useState(false);
+  
+  // State for create challenge form
+  const [showCreateChallengeModal, setShowCreateChallengeModal] = useState(false);
+  const [newChallengeTitle, setNewChallengeTitle] = useState('');
+  const [newChallengeDescription, setNewChallengeDescription] = useState('');
+  
+  // Function to create a new challenge
+  // TODO: send to API - replace with actual backend call
+  const createChallenge = (title: string, description: string) => {
+    if (!title.trim() || !description.trim()) {
+      Alert.alert('Error', 'Please fill in both title and description');
+      return;
+    }
+
+    const newChallenge: ChallengeData = {
+      id: `challenge-${Date.now()}`, // Generate unique ID
+      title: title.trim(),
+      description: description.trim(),
+      createdAt: new Date().toISOString(), // Current timestamp
+    };
+
+    // Prepend to array (appears at top)
+    setChallengesData(prev => [newChallenge, ...prev]);
+    
+    // Close form and reset inputs
+    setShowCreateChallengeModal(false);
+    setNewChallengeTitle('');
+    setNewChallengeDescription('');
+    
+    // TODO: Send to backend API
+    // await supabase.from('challenges').insert([newChallenge]);
+    
+    Alert.alert('Success', 'Challenge created successfully!');
+  };
+  
+  // Handle challenge card tap (for user-created challenges)
+  const handleChallengeCardPress = (challenge: ChallengeData) => {
+    setSelectedChallenge(challenge);
+    setShowChallengeDetailsModal(true);
+  };
+  
+  // Handle legacy/featured challenge card tap
+  // Convert legacy challenge format to ChallengeData for modal display
+  const handleLegacyChallengePress = (challenge: { id: string; title: string; dateRange?: string; time?: string; participants: number; image: string | null }) => {
+    // Convert legacy challenge to ChallengeData format
+    const challengeData: ChallengeData = {
+      id: challenge.id,
+      title: challenge.title,
+      description: `Join ${challenge.participants} participants in this challenge. ${challenge.dateRange || challenge.time || 'Ongoing challenge'}.`,
+      createdAt: new Date().toISOString(), // Use current date as fallback since legacy challenges don't have createdAt
+    };
+    
+    setSelectedChallenge(challengeData);
+    setShowChallengeDetailsModal(true);
+  };
   
   // Combine context challenges with default challenges (for demo)
   // In production, you'd fetch from Supabase
@@ -409,181 +534,7 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
 
 
 
-//   // Upload image to Supabase Storage — modern fetch->blob approach
-// const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
-//   try {
-//     setUploadingImage(true);
-//     console.log('📤 Uploading image to Supabase Storage...');
 
-//     // Get current user
-//     const { data: { user } } = await supabase.auth.getUser();
-//     if (!user) throw new Error('User not authenticated');
-
-//     // Build unique filename
-//     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
-//     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
-
-//     // Fetch the file and get a blob
-//     console.log('📖 Fetching file and creating blob...');
-//     const fetchRes = await fetch(imageUri);
-//     if (!fetchRes.ok) throw new Error(`Failed to fetch file: ${fetchRes.status}`);
-//     const blob = await fetchRes.blob();
-
-//     // Upload the blob to Supabase Storage
-//     console.log('📤 Uploading blob to Supabase...');
-//     const { data, error } = await supabase.storage
-//       .from('community-posts')
-//       .upload(fileName, blob, {
-//         contentType: blob.type || `image/${fileExt}`,
-//         upsert: false,
-//       });
-
-//     if (error) {
-//       console.error('❌ Supabase Storage upload error:', error);
-//       throw error;
-//     }
-
-//     console.log('✅ Image uploaded:', data.path);
-
-//     // Get public URL
-//     const { data: publicUrlData } = supabase.storage
-//       .from('community-posts')
-//       .getPublicUrl(data.path);
-
-//     console.log('🔗 Public URL:', publicUrlData.publicUrl);
-//     return publicUrlData.publicUrl;
-//   } catch (err) {
-//     console.error('❌ Error uploading image:', err);
-//     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
-//     return null;
-//   } finally {
-//     setUploadingImage(false);
-//   }
-// };
-
-
-
-
-  // // Upload image to Supabase Storage — React Native compatible approach
-  // const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
-  //   try {
-  //     setUploadingImage(true);
-  //     console.log('📤 Uploading image to Supabase Storage...');
-
-  //     // Get current user
-  //     const { data: { user } } = await supabase.auth.getUser();
-  //     if (!user) throw new Error('User not authenticated');
-
-  //     // Build unique filename
-  //     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
-  //     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
-
-  //     // Read file as base64 using expo-file-system (React Native compatible)
-  //     console.log('📖 Reading image file...');
-  //     // @ts-ignore - expo-file-system encoding type
-  //     const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-  //       encoding: 'base64',
-  //     });
-
-  //     // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
-  //     console.log('🔄 Converting base64 to ArrayBuffer...');
-  //     const arrayBuffer = decode(base64Data);
-
-  //     // Upload using Supabase Storage client
-  //     console.log('📤 Uploading to Supabase Storage...');
-  //     const { data, error } = await supabase.storage
-  //       .from('community-posts')
-  //       .upload(fileName, arrayBuffer, {
-  //         contentType: `image/${fileExt}`,
-  //         upsert: false,
-  //       });
-
-  //     if (error) {
-  //       console.error('❌ Supabase Storage upload error:', error);
-  //       throw error;
-  //     }
-
-  //     console.log('✅ Image uploaded:', data.path);
-
-  //     // Get public URL
-  //     const { data: publicUrlData } = supabase.storage
-  //       .from('community-posts')
-  //       .getPublicUrl(data.path);
-
-  //     console.log('🔗 Public URL:', publicUrlData.publicUrl);
-  //     return publicUrlData.publicUrl;
-  //   } catch (err) {
-  //     console.error('❌ Error uploading image:', err);
-  //     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
-  //     return null;
-  //   } finally {
-  //     setUploadingImage(false);
-  //   }
-  // };
-
-
-
-
-  // // Upload image to Supabase Storage
-  // const uploadImageToStorage = async (imageUri: string): Promise<string | null> => {
-  //   try {
-  //     setUploadingImage(true);
-  //     console.log('📤 Uploading image to Supabase Storage...');
-
-  //     // Get current user
-  //     const { data: { user } } = await supabase.auth.getUser();
-  //     if (!user) {
-  //       throw new Error('User not authenticated');
-  //     }
-
-  //     // Create unique filename with images folder path
-  //     const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
-  //     const fileName = `images/${user.id}/${Date.now()}.${fileExt}`;
-
-  //     // Read file as base64 using expo-file-system (React Native compatible)
-  //     console.log('📖 Reading image file...');
-  //     // @ts-ignore - expo-file-system encoding type
-  //     const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-  //       encoding: 'base64',
-  //     });
-
-  //     // Convert base64 to ArrayBuffer using base64-arraybuffer (recommended by Supabase)
-  //     console.log('🔄 Converting base64 to ArrayBuffer...');
-  //     const arrayBuffer = decode(base64Data);
-
-  //     console.log('📤 Uploading to Supabase Storage...');
-
-  //     // Upload using Supabase Storage client to community-posts bucket
-  //     const { data, error } = await supabase.storage
-  //       .from('community-posts')
-  //       .upload(fileName, arrayBuffer, {
-  //         contentType: `image/${fileExt}`,
-  //         upsert: false,
-  //       });
-
-  //     if (error) {
-  //       console.error('❌ Supabase Storage upload error:', error);
-  //       throw error;
-  //     }
-
-  //     console.log('✅ Image uploaded:', data.path);
-
-  //     // Get public URL from community-posts bucket
-  //     const { data: publicUrlData } = supabase.storage
-  //       .from('community-posts')
-  //       .getPublicUrl(data.path);
-
-  //     console.log('🔗 Public URL:', publicUrlData.publicUrl);
-  //     return publicUrlData.publicUrl;
-
-  //   } catch (error) {
-  //     console.error('❌ Error uploading image:', error);
-  //     Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
-  //     return null;
-  //   } finally {
-  //     setUploadingImage(false);
-  //   }
-  // };
 
   // Fetch posts from Supabase with user profile data
   const fetchPosts = async () => {
@@ -1184,7 +1135,7 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
         </View>
         <TouchableOpacity
           style={styles.createChallengeButton}
-          onPress={() => navigation.navigate('CreateChallenge')}
+          onPress={() => setShowCreateChallengeModal(true)}
           accessibilityLabel="Create new challenge"
         >
           <Ionicons name="add-circle" size={20} color={COLORS.white} />
@@ -1192,29 +1143,49 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
         </TouchableOpacity>
       </View>
 
-      {/* Challenges List */}
-      {allChallenges.length > 0 ? (
-        allChallenges.map((challenge) => (
-          <ChallengeCard
-            key={challenge.id}
-            challenge={challenge}
-            onPress={() => navigation.navigate('ChallengeDetails', { challengeId: challenge.id })}
-          />
-        ))
-      ) : (
-        <View style={styles.emptyState}>
-          <Ionicons name="trophy-outline" size={64} color={COLORS.border} />
-          <Text style={styles.emptyStateTitle}>No challenges yet</Text>
-          <Text style={styles.emptyStateText}>
-            Be the first to create a challenge!
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyStateButton}
-            onPress={() => navigation.navigate('CreateChallenge')}
-          >
-            <Text style={styles.emptyStateButtonText}>Create Challenge</Text>
-          </TouchableOpacity>
+      {/* User-Created Challenges List */}
+      {challengesData.length > 0 && (
+        <View style={styles.userChallengesSection}>
+          <Text style={styles.userChallengesTitle}>Your Challenges</Text>
+          {challengesData.map((challenge) => (
+            <ChallengeDataCard
+              key={challenge.id}
+              challenge={challenge}
+              onPress={() => handleChallengeCardPress(challenge)}
+              isSelected={selectedChallenge?.id === challenge.id}
+            />
+          ))}
         </View>
+      )}
+
+      {/* Featured Challenges List (from context) */}
+      {allChallenges.length > 0 ? (
+        <View style={styles.legacyChallengesSection}>
+          <Text style={styles.legacyChallengesTitle}>Featured Challenges</Text>
+          {allChallenges.map((challenge) => (
+            <ChallengeCard
+              key={challenge.id}
+              challenge={challenge}
+              onPress={() => handleLegacyChallengePress(challenge)}
+            />
+          ))}
+        </View>
+      ) : (
+        challengesData.length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={64} color={COLORS.border} />
+            <Text style={styles.emptyStateTitle}>No challenges yet</Text>
+            <Text style={styles.emptyStateText}>
+              Be the first to create a challenge!
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyStateButton}
+              onPress={() => setShowCreateChallengeModal(true)}
+            >
+              <Text style={styles.emptyStateButtonText}>Create Challenge</Text>
+            </TouchableOpacity>
+          </View>
+        )
       )}
     </View>
   );
@@ -1525,6 +1496,119 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
           </View>
         </View>
       </Modal>
+
+      {/* Challenge Details Modal */}
+      <Modal
+        visible={showChallengeDetailsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setShowChallengeDetailsModal(false);
+          setSelectedChallenge(null);
+        }}
+      >
+        <View style={styles.challengeDetailsModalOverlay}>
+          <View style={styles.challengeDetailsModalContent}>
+            <View style={styles.challengeDetailsModalHeader}>
+              <Text style={styles.challengeDetailsModalTitle}>Challenge Details</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowChallengeDetailsModal(false);
+                  setSelectedChallenge(null);
+                }}
+                accessibilityLabel="Close challenge details"
+              >
+                <Ionicons name="close" size={24} color={COLORS.navy} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedChallenge && (
+              <ScrollView style={styles.challengeDetailsContent}>
+                <Text style={styles.challengeDetailsTitle}>
+                  {selectedChallenge.title}
+                </Text>
+                <Text style={styles.challengeDetailsDate}>
+                  Created: {new Date(selectedChallenge.createdAt).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+                <View style={styles.challengeDetailsDivider} />
+                <Text style={styles.challengeDetailsDescription}>
+                  {selectedChallenge.description}
+                </Text>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Challenge Modal */}
+      <Modal
+        visible={showCreateChallengeModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setShowCreateChallengeModal(false);
+          setNewChallengeTitle('');
+          setNewChallengeDescription('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create New Challenge</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowCreateChallengeModal(false);
+                  setNewChallengeTitle('');
+                  setNewChallengeDescription('');
+                }}
+                accessibilityLabel="Close create challenge form"
+              >
+                <Ionicons name="close" size={24} color={COLORS.navy} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.postInput}
+              placeholder="Challenge Title"
+              placeholderTextColor={COLORS.textSecondary}
+              value={newChallengeTitle}
+              onChangeText={setNewChallengeTitle}
+              maxLength={100}
+            />
+
+            <TextInput
+              style={[styles.postInput, styles.challengeDescriptionInput]}
+              placeholder="Challenge Description"
+              placeholderTextColor={COLORS.textSecondary}
+              value={newChallengeDescription}
+              onChangeText={setNewChallengeDescription}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.submitPostButton,
+                  (!newChallengeTitle.trim() || !newChallengeDescription.trim()) && styles.submitPostButtonDisabled,
+                ]}
+                onPress={() => createChallenge(newChallengeTitle, newChallengeDescription)}
+                disabled={!newChallengeTitle.trim() || !newChallengeDescription.trim()}
+                accessibilityLabel="Create challenge"
+              >
+                <Text style={styles.submitPostButtonText}>Create Challenge</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1803,16 +1887,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,         // #6F6F7B
     lineHeight: 20,
     flex: 1,
-    marginRight: 12,
+    marginRight:100,
   },
   createChallengeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    gap: 6,
+    marginLeft: -90,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -1823,6 +1908,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
+    marginLeft: 6,
   },
   challengeImagePlaceholder: {
     backgroundColor: COLORS.primaryBg,
@@ -2119,6 +2205,138 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     marginTop: 4,
+  },
+  
+  // ============================================
+  // NEW CHALLENGES AREA STYLES
+  // ============================================
+  challengesListContent: {
+    paddingBottom: 16,
+  },
+  userChallengesSection: {
+    marginTop: 0,
+    marginBottom: 24,
+  },
+  userChallengesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+    marginBottom: 16,
+  },
+  legacyChallengesSection: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  legacyChallengesTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+    marginBottom: 16,
+  },
+  challengeDataCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    marginBottom: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  challengeDataCardSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryBg,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.2,
+    elevation: 5,
+  },
+  challengeDataCardContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  challengeDataCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+    marginBottom: 6,
+  },
+  challengeDataCardDescription: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  challengeDataCardDate: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  challengeDataCardArrow: {
+    marginLeft: 8,
+  },
+  
+  // Challenge Details Modal
+  challengeDetailsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  challengeDetailsModalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    padding: 24,
+  },
+  challengeDetailsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  challengeDetailsModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+  },
+  challengeDetailsContent: {
+    maxHeight: 500,
+  },
+  challengeDetailsTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.navy,
+    marginBottom: 12,
+  },
+  challengeDetailsDate: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 16,
+  },
+  challengeDetailsDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginBottom: 16,
+  },
+  challengeDetailsDescription: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    lineHeight: 24,
+  },
+  challengeDescriptionInput: {
+    minHeight: 120,
+    marginTop: 12,
+    textAlignVertical: 'top',
   },
 });
 

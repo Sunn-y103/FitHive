@@ -1,41 +1,53 @@
 -- =====================================================
--- AUTO-PROFILE CREATION TRIGGER
+-- AUTO-PROFILE CREATION FUNCTION
 -- =====================================================
--- This trigger automatically creates a profile row when a user signs up
--- ONLY inserts: id, email, name (full_name)
--- Health fields (height, weight, gender, water, etc.) are NULL
--- User will fill these later in the Profile screen
+-- NOTE: Supabase doesn't allow triggers on auth.users from SQL editor
+-- This function can be called manually or via Database Webhooks
+-- The app will handle profile creation automatically via AuthContext
 -- =====================================================
 
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+-- Function to create profile (can be called from app or webhook)
+CREATE OR REPLACE FUNCTION public.handle_new_user(user_id UUID, user_email TEXT, user_full_name TEXT DEFAULT NULL)
+RETURNS void AS $$
+DECLARE
+  user_username TEXT;
 BEGIN
-  -- Insert a new profile row when a user signs up
-  -- ONLY basic fields: id, email, name (full_name)
-  -- Health fields are NOT set here - they start as NULL
+  -- Extract username from email (before @) or use UUID prefix as fallback
+  user_username := COALESCE(
+    SPLIT_PART(user_email, '@', 1),
+    SUBSTRING(user_id::text, 1, 8)
+  );
+
+  -- Insert new profile row with basic fields
   INSERT INTO public.profiles (id, email, full_name, username)
   VALUES (
-    NEW.id,
-    NEW.email,  -- Store email for convenience
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NULL),  -- Name from signup form (optional)
-    COALESCE(
-      SPLIT_PART(NEW.email, '@', 1),  -- Extract username from email (before @)
-      SUBSTRING(NEW.id::text, 1, 8)    -- Fallback to first 8 chars of UUID
-    )
+    user_id,
+    user_email,  -- Store email
+    user_full_name,  -- Name from signup (optional)
+    user_username  -- Extracted from email
   )
-  ON CONFLICT (id) DO NOTHING;  -- Prevent duplicate inserts
-  RETURN NEW;
+  ON CONFLICT (id) DO UPDATE
+  SET 
+    email = COALESCE(EXCLUDED.email, profiles.email),
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
+    username = COALESCE(EXCLUDED.username, profiles.username);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create trigger that fires after a new user is inserted into auth.users
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+-- Grant execute permission
+GRANT EXECUTE ON FUNCTION public.handle_new_user(UUID, TEXT, TEXT) TO authenticated, anon;
 
 -- Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON public.profiles TO anon, authenticated;
+
+-- =====================================================
+-- ALTERNATIVE: If you want to use Database Webhooks
+-- =====================================================
+-- Go to Supabase Dashboard > Database > Webhooks
+-- Create a new webhook:
+-- - Table: auth.users
+-- - Events: INSERT
+-- - HTTP Request: POST to your edge function or API endpoint
+-- - Or use the function above in your app code
 

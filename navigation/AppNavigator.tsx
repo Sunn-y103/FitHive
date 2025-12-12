@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import AllHealthDataScreen from '../screens/AllHealthDataScreen';
 import WaterIntakeScreen from '../screens/WaterIntakeScreen';
 import SleepScreen from '../screens/SleepScreen';
@@ -17,6 +18,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   SignUp: undefined;
+  Onboarding: undefined;
   HomeTabs: undefined;
   AllHealthData: undefined;
   WaterIntake: undefined;
@@ -35,6 +37,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignUp" component={SignUpScreen} />
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="HomeTabs" component={BottomTabs} />
         <Stack.Screen name="AllHealthData" component={AllHealthDataScreen} />
         <Stack.Screen name="WaterIntake" component={WaterIntakeScreen} />
