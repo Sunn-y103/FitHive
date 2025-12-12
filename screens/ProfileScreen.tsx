@@ -85,6 +85,7 @@ const ProfileScreen: React.FC = () => {
     weight: '70',
     gender: 'Male',
   });
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string>('Basic');
 
   // Fetch profile from Supabase on mount and when user changes
   useEffect(() => {
@@ -113,6 +114,18 @@ const ProfileScreen: React.FC = () => {
             weight: supabaseProfile.weight || '70',
             gender: supabaseProfile.gender || 'Male',
           });
+          
+          // Fetch subscription plan from profiles table
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('subscription_plan')
+            .eq('id', user.id)
+            .maybeSingle();
+          
+          if (profileData?.subscription_plan) {
+            setSubscriptionPlan(profileData.subscription_plan);
+          }
+          
           console.log('✅ Profile loaded from Supabase');
         } else {
           // Fallback to user email if profile doesn't exist
@@ -141,6 +154,7 @@ const ProfileScreen: React.FC = () => {
 
   // Modal state (not persisted - temporary editing state)
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isSubscriptionModalVisible, setIsSubscriptionModalVisible] = useState(false);
   const [editingProfile, setEditingProfile] = useState<ProfileData>(profile);
   
   // Sync editing profile when modal opens or profile changes
@@ -330,7 +344,8 @@ const ProfileScreen: React.FC = () => {
           <MenuItem
             icon="card-outline"
             title="Subscription"
-            subtitle="Free Plan"
+            subtitle={subscriptionPlan}
+            onPress={() => setIsSubscriptionModalVisible(true)}
           />
         </View>
 
@@ -406,6 +421,123 @@ const ProfileScreen: React.FC = () => {
         {/* App Version */}
         <Text style={styles.versionText}>FitHive v1.0.0</Text>
       </ScrollView>
+
+      {/* Subscription Plans Modal */}
+      <Modal
+        visible={isSubscriptionModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsSubscriptionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Subscription Plans</Text>
+              <TouchableOpacity onPress={() => setIsSubscriptionModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1E3A5F" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.subscriptionModalContent}
+            >
+              {/* Basic Plan Card */}
+              <View style={[styles.subscriptionCard, subscriptionPlan === 'Basic' && styles.subscriptionCardActive]}>
+                <View style={styles.subscriptionHeader}>
+                  <Text style={styles.subscriptionTitle}>Basic Plan</Text>
+                  {subscriptionPlan === 'Basic' && (
+                    <View style={styles.currentBadge}>
+                      <Text style={styles.currentBadgeText}>Current</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.benefitsList}>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Access to basic workouts</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Track 7-day workout history</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Upload 3 images/month</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>AI Chatbot access</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Community access</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Upload progress images</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#A992F6" />
+                    <Text style={styles.benefitText}>Track daily water intake or calories burned</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.choosePlanButton, subscriptionPlan === 'Basic' && styles.choosePlanButtonActive]}
+                  onPress={() => {
+                    // TODO: Implement plan selection logic
+                    Alert.alert('Basic Plan', 'You are already on the Basic plan.');
+                  }}
+                >
+                  <Text style={[styles.choosePlanText, subscriptionPlan === 'Basic' && styles.choosePlanTextActive]}>
+                    {subscriptionPlan === 'Basic' ? 'Current Plan' : 'Choose Plan'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Premium Plan Card */}
+              <View style={[styles.subscriptionCard, styles.premiumCard, subscriptionPlan === 'Premium' && styles.subscriptionCardActive]}>
+                <View style={styles.subscriptionHeader}>
+                  <View style={styles.premiumHeader}>
+                    <Text style={[styles.subscriptionTitle, styles.premiumTitle]}>Premium Plan</Text>
+                    <Ionicons name="star" size={20} color="#FFD700" />
+                  </View>
+                  {subscriptionPlan === 'Premium' && (
+                    <View style={styles.currentBadge}>
+                      <Text style={styles.currentBadgeText}>Current</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.benefitsList}>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#FFD700" />
+                    <Text style={styles.benefitText}>Priority: User will be prioritized before basic plan members</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#FFD700" />
+                    <Text style={styles.benefitText}>Badges: User will get badges</Text>
+                  </View>
+                  <View style={styles.benefitItem}>
+                    <Ionicons name="checkmark-circle" size={18} color="#FFD700" />
+                    <Text style={styles.benefitText}>1-to-1 health assistant access</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.choosePlanButton, styles.premiumButton, subscriptionPlan === 'Premium' && styles.choosePlanButtonActive]}
+                  onPress={() => {
+                    // TODO: Implement plan selection logic
+                    Alert.alert('Premium Plan', 'Premium plan selection coming soon!');
+                  }}
+                >
+                  <Text style={[styles.choosePlanText, subscriptionPlan === 'Premium' && styles.choosePlanTextActive]}>
+                    {subscriptionPlan === 'Premium' ? 'Current Plan' : 'Choose Plan'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Profile Modal */}
       <Modal
@@ -759,6 +891,9 @@ const styles = StyleSheet.create({
     padding: 24,
     maxHeight: '85%',
   },
+  subscriptionModalContent: {
+    paddingBottom: 20,
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -839,6 +974,106 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  // Subscription Plans
+  subscriptionContainer: {
+    marginBottom: 24,
+  },
+  subscriptionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#E8E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  subscriptionCardActive: {
+    borderColor: '#A992F6',
+    shadowColor: '#A992F6',
+    shadowOpacity: 0.2,
+  },
+  premiumCard: {
+    borderColor: '#FFD700',
+  },
+  premiumCardActive: {
+    borderColor: '#FFD700',
+    shadowColor: '#FFD700',
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  premiumHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subscriptionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1E3A5F',
+  },
+  premiumTitle: {
+    color: '#1E3A5F',
+  },
+  currentBadge: {
+    backgroundColor: '#A992F6',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  currentBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  benefitsList: {
+    marginBottom: 20,
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  benefitText: {
+    fontSize: 14,
+    color: '#6F6F7B',
+    marginLeft: 8,
+    flex: 1,
+  },
+  choosePlanButton: {
+    backgroundColor: '#F7F7FA',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E8E8F0',
+  },
+  choosePlanButtonActive: {
+    backgroundColor: '#A992F6',
+    borderColor: '#A992F6',
+  },
+  premiumButton: {
+    borderColor: '#FFD700',
+  },
+  premiumButtonActive: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFD700',
+  },
+  choosePlanText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E3A5F',
+  },
+  choosePlanTextActive: {
     color: '#FFFFFF',
   },
 });

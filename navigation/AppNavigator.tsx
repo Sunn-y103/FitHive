@@ -16,6 +16,7 @@ import ChallengeDetailsScreen from '../screens/ChallengeDetailsScreen';
 import BMIScreen from '../screens/BMIScreen';
 import NutritionScreen from '../screens/NutritionScreen';
 import BurnedCaloriesScreen from '../screens/BurnedCaloriesScreen';
+import DoctorDetailsScreen, { Doctor } from '../screens/DoctorDetailsScreen';
 import BottomTabs from './BottomTabs';
 export type RootStackParamList = {
   Splash: undefined;
@@ -34,6 +35,7 @@ export type RootStackParamList = {
   BMI: undefined;
   Nutrition: undefined;
   BurnedCalories: undefined;
+  DoctorDetails: { doctor: Doctor };
 };
 const Stack = createStackNavigator<RootStackParamList>();
 const AppNavigator: React.FC = () => {
@@ -56,6 +58,7 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="BMI" component={BMIScreen} />
         <Stack.Screen name="Nutrition" component={NutritionScreen} />
         <Stack.Screen name="BurnedCalories" component={BurnedCaloriesScreen} />
+        <Stack.Screen name="DoctorDetails" component={DoctorDetailsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
