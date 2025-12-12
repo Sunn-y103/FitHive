@@ -13,6 +13,9 @@ import AIChatScreen from '../screens/AIChatScreen';
 import WorkoutCameraScreen from '../screens/WorkoutCameraScreen';
 import CreateChallengeScreen from '../screens/CreateChallengeScreen';
 import ChallengeDetailsScreen from '../screens/ChallengeDetailsScreen';
+import BMIScreen from '../screens/BMIScreen';
+import NutritionScreen from '../screens/NutritionScreen';
+import BurnedCaloriesScreen from '../screens/BurnedCaloriesScreen';
 import BottomTabs from './BottomTabs';
 export type RootStackParamList = {
   Splash: undefined;
@@ -28,6 +31,9 @@ export type RootStackParamList = {
   CreateChallenge: undefined;
   ChallengeDetails: { challengeId: string };
   WorkoutCamera: { exerciseType: 'pushup' | 'curl' | 'squat' };
+  BMI: undefined;
+  Nutrition: undefined;
+  BurnedCalories: undefined;
 };
 const Stack = createStackNavigator<RootStackParamList>();
 const AppNavigator: React.FC = () => {
@@ -47,6 +53,9 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="WorkoutCamera" component={WorkoutCameraScreen} />
         <Stack.Screen name="CreateChallenge" component={CreateChallengeScreen} />
         <Stack.Screen name="ChallengeDetails" component={ChallengeDetailsScreen} />
+        <Stack.Screen name="BMI" component={BMIScreen} />
+        <Stack.Screen name="Nutrition" component={NutritionScreen} />
+        <Stack.Screen name="BurnedCalories" component={BurnedCaloriesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
