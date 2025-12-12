@@ -57,6 +57,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchProfile } from '../services/profileService';
 import { useAppState } from '../contexts/AppStateContext';
 import { STORAGE_KEYS } from '../utils/storage';
+import { useHealthData } from '../contexts/HealthDataContext';
 
 // Health entry data structure
 export interface HealthEntry {
@@ -304,6 +305,7 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
 }) => {
   const navigation = useNavigation<AllHealthDataScreenNavigationProp>();
   const { getState } = useAppState();
+  const { setWaterValue, setBurnedValue, setNutritionValue, setSleepValue } = useHealthData();
   const [showWorkoutModal, setShowWorkoutModal] = useState(false);
   const [latestWorkout, setLatestWorkout] = useState<{ reps: number; exercise: string; date: string } | null>(null);
   const [loadingWorkout, setLoadingWorkout] = useState(true);
@@ -617,6 +619,15 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
     console.log(`🔥 Burned calories average: ${result.average} (from ${result.count} entries, mode: ${WINDOW_MODE})`);
     return result;
   }, [calorieEntries, updateTrigger]);
+
+  // Update context values whenever averages change
+  // This allows HomeScreen to reactively update mission completion status
+  useEffect(() => {
+    setWaterValue(waterAverage.average);
+    setBurnedValue(burnedCaloriesAverage.average);
+    setNutritionValue(nutritionAverage.average);
+    setSleepValue(sleepAverage.average);
+  }, [waterAverage.average, burnedCaloriesAverage.average, nutritionAverage.average, sleepAverage.average, setWaterValue, setBurnedValue, setNutritionValue, setSleepValue]);
 
   // Format average value for display
   const formatAverage = (

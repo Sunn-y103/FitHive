@@ -365,6 +365,13 @@ const BurnedCaloriesScreen: React.FC = () => {
             <Text style={styles.totalValue}>{totalCalories.toFixed(2)} kcal</Text>
           </View>
         )}
+
+        {/* ADDED: Daily Goal container - Fixed at the bottom of Burned Calories screen */}
+        {/* This Goal container is STATIC (unchangeable by user) and stays at the bottom */}
+        {/* The container is non-interactive (pointerEvents: 'none') to prevent any user editing */}
+        <View style={styles.dailyGoalContainer}>
+          <Text style={styles.dailyGoalLabel}>Daily Goal: 300 kcal</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -540,6 +547,38 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: COLORS.white,
+  },
+  // ADDED: Daily Goal container styles
+  // This container is STATIC and uneditable - it displays the daily burned calories goal
+  // It stays fixed at the bottom of the Burned Calories screen
+  // The container is non-interactive (pointerEvents: 'none') to prevent any user editing
+  dailyGoalContainer: {
+    backgroundColor: '#E8F4F8',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#D0E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Make it non-interactive (no touch events) - user cannot edit or interact with this
+    pointerEvents: 'none',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  dailyGoalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1AA6A6',
+    letterSpacing: 0.3,
   },
 });
 

@@ -8,7 +8,7 @@ interface MissionCardProps {
 }
 
 const MissionCard: React.FC<MissionCardProps> = ({ completed, total }) => {
-  const progress = completed / total;
+  const progress = total > 0 ? completed / total : 0;
 
   return (
     <LinearGradient
