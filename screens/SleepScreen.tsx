@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { usePersistentState, useImmediatePersistentState } from '../hooks/usePersistentState';
+import { useUserPersistentState } from '../hooks/useUserPersistentState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -58,13 +58,14 @@ const SleepScreen: React.FC = () => {
   const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState<TabType>('Weekly');
   
-  // Persistent state - automatically saved and restored
-  const [isSleeping, setIsSleeping] = usePersistentState<boolean>('sleep_is_sleeping', false);
-  const [sleepStart, setSleepStart] = usePersistentState<number | null>('sleep_start_time', null);
+  // Persistent state - automatically saved and restored (user-specific)
+  // Keys are automatically prefixed with userId: 'sleep_sessions_<userId>', etc.
+  const [isSleeping, setIsSleeping] = useUserPersistentState<boolean>('sleep_is_sleeping', false);
+  const [sleepStart, setSleepStart] = useUserPersistentState<number | null>('sleep_start_time', null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [sleepSessions, setSleepSessions] = usePersistentState<SleepSession[]>('sleep_sessions', []);
-  const [bedtime, setBedtime] = usePersistentState<string>('sleep_bedtime', '22:00');
-  const [wakeTime, setWakeTime] = usePersistentState<string>('sleep_wake_time', '07:30');
+  const [sleepSessions, setSleepSessions] = useUserPersistentState<SleepSession[]>('sleep_sessions', []);
+  const [bedtime, setBedtime] = useUserPersistentState<string>('sleep_bedtime', '22:00');
+  const [wakeTime, setWakeTime] = useUserPersistentState<string>('sleep_wake_time', '07:30');
 
   // Live elapsed time update when sleeping
   useEffect(() => {

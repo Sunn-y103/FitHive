@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { usePersistentState } from '../hooks/usePersistentState';
+import { useUserPersistentState } from '../hooks/useUserPersistentState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRAPH_WIDTH = SCREEN_WIDTH - 80;
@@ -39,9 +39,10 @@ const WaterIntakeScreen: React.FC = () => {
   const [waterAmount, setWaterAmount] = useState('');
   const [selectedTime, setSelectedTime] = useState(0);
   
-  // Persistent state - automatically saved and restored
-  const [activeTab, setActiveTab] = usePersistentState<TabType>('water_intake_active_tab', 'Today');
-  const [entries, setEntries] = usePersistentState<WaterEntry[]>('water_intake_entries', []);
+  // Persistent state - automatically saved and restored (user-specific)
+  // Keys are automatically prefixed with userId: 'water_intake_entries_<userId>'
+  const [activeTab, setActiveTab] = useUserPersistentState<TabType>('water_intake_active_tab', 'Today');
+  const [entries, setEntries] = useUserPersistentState<WaterEntry[]>('water_intake_entries', []);
 
   const handleAddWater = async () => {
     const amount = parseFloat(waterAmount);

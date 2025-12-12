@@ -15,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile } from '../services/profileService';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { usePersistentState } from '../hooks/usePersistentState';
+import { useUserPersistentState } from '../hooks/useUserPersistentState';
 
 type BurnedCaloriesScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BurnedCalories'>;
 
@@ -59,8 +59,9 @@ const BurnedCaloriesScreen: React.FC = () => {
   const [cyclingTime, setCyclingTime] = useState('');
   const [cyclingCalories, setCyclingCalories] = useState<number | null>(null);
 
-  // Load and save calorie entries
-  const [calorieEntries, setCalorieEntries] = usePersistentState<CalorieEntry[]>('burned_calories_entries', []);
+  // Load and save calorie entries (user-specific)
+  // Key is automatically prefixed with userId: 'burned_calories_entries_<userId>'
+  const [calorieEntries, setCalorieEntries] = useUserPersistentState<CalorieEntry[]>('burned_calories_entries', []);
 
   // Load user weight from profile
   useEffect(() => {

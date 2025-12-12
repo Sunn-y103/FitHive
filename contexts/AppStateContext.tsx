@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { Storage, STORAGE_KEYS } from '../utils/storage';
+import { useAuth } from './AuthContext';
+import { getUserKey } from '../utils/userStorageUtils';
 
 // Global app state type
 export interface AppState {
@@ -54,17 +56,32 @@ interface AppStateProviderProps {
 }
 
 export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) => {
+  const { user } = useAuth();
   const [state, dispatch] = useReducer(appStateReducer, {});
   const [loading, setLoading] = React.useState(true);
+  const currentUserIdRef = React.useRef<string | null>(null);
 
-  // Load initial state from AsyncStorage
+  // Get user-specific storage key
+  const getStorageKey = useCallback(() => {
+    if (user?.id) {
+      return getUserKey(STORAGE_KEYS.APP_STATE, user.id);
+    }
+    return STORAGE_KEYS.APP_STATE;
+  }, [user?.id]);
+
+  // Load initial state from AsyncStorage (user-specific)
   useEffect(() => {
     const loadInitialState = async () => {
       try {
-        const savedState = await Storage.load<AppState>(STORAGE_KEYS.APP_STATE);
+        const storageKey = getStorageKey();
+        const savedState = await Storage.load<AppState>(storageKey);
         if (savedState) {
           dispatch({ type: 'LOAD_STATE', payload: savedState });
+        } else {
+          // No saved state for this user - start fresh
+          dispatch({ type: 'LOAD_STATE', payload: {} });
         }
+        currentUserIdRef.current = user?.id || null;
       } catch (error) {
         console.error('Error loading app state:', error);
       } finally {
@@ -73,14 +90,26 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
     };
 
     loadInitialState();
-  }, []);
+  }, [user?.id, getStorageKey]);
 
-  // Save state to AsyncStorage whenever it changes
+  // Reset state when user changes
   useEffect(() => {
-    if (!loading && Object.keys(state).length > 0) {
+    if (currentUserIdRef.current !== user?.id) {
+      // User changed - clear state and reload
+      dispatch({ type: 'CLEAR_ALL' });
+      currentUserIdRef.current = user?.id || null;
+      setLoading(true);
+      // Reload will happen in the loadInitialState effect above
+    }
+  }, [user?.id]);
+
+  // Save state to AsyncStorage whenever it changes (user-specific)
+  useEffect(() => {
+    if (!loading && Object.keys(state).length > 0 && user?.id) {
       const saveState = async () => {
         try {
-          await Storage.save(STORAGE_KEYS.APP_STATE, state);
+          const storageKey = getStorageKey();
+          await Storage.save(storageKey, state);
         } catch (error) {
           console.error('Error saving app state:', error);
         }
@@ -90,7 +119,7 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
       const timeoutId = setTimeout(saveState, 300);
       return () => clearTimeout(timeoutId);
     }
-  }, [state, loading]);
+  }, [state, loading, user?.id, getStorageKey]);
 
   // Set state function
   const setState = useCallback(async (key: string, value: any) => {

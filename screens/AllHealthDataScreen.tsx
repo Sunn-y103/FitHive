@@ -58,6 +58,8 @@ import { fetchProfile } from '../services/profileService';
 import { useAppState } from '../contexts/AppStateContext';
 import { STORAGE_KEYS } from '../utils/storage';
 import { useHealthData } from '../contexts/HealthDataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserKey } from '../utils/userStorageUtils';
 
 // Health entry data structure
 export interface HealthEntry {
@@ -304,6 +306,7 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
   calorieEntries: propCalorieEntries = [] 
 }) => {
   const navigation = useNavigation<AllHealthDataScreenNavigationProp>();
+  const { user } = useAuth();
   const { getState } = useAppState();
   const { setWaterValue, setBurnedValue, setNutritionValue, setSleepValue } = useHealthData();
   const [showWorkoutModal, setShowWorkoutModal] = useState(false);
@@ -339,19 +342,23 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
 
   // Load entries from AsyncStorage and other sources
   useEffect(() => {
-    loadHealthEntries();
-    loadCalorieEntries();
-    loadLatestWorkout();
-  }, []);
+    if (user?.id) {
+      loadHealthEntries();
+      loadCalorieEntries();
+      loadLatestWorkout();
+    }
+  }, [user?.id]);
 
   // Reload entries when screen comes into focus (in case data was updated)
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      loadHealthEntries();
-      loadCalorieEntries();
+      if (user?.id) {
+        loadHealthEntries();
+        loadCalorieEntries();
+      }
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, user?.id]);
 
   /**
    * Load health entries from AsyncStorage and convert to HealthEntry format
@@ -366,10 +373,13 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
       setLoadingEntries(true);
       const allEntries: HealthEntry[] = [];
 
-      // 1. Load Water Intake entries from AppStateContext
+      // 1. Load Water Intake entries from AppStateContext (user-specific)
       try {
+        // Use user-specific key
+        const waterKey = user?.id ? getUserKey('water_intake_entries', user.id) : 'water_intake_entries';
+        
         // Try AppStateContext first (used by usePersistentState)
-        const waterEntries = getState<WaterEntry[]>('water_intake_entries');
+        const waterEntries = getState<WaterEntry[]>(waterKey);
         if (waterEntries && Array.isArray(waterEntries)) {
           waterEntries.forEach((entry: any) => {
             if (entry.liters && entry.timestamp) {
@@ -383,7 +393,7 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
           });
         } else {
           // Fallback: Try direct AsyncStorage read (legacy)
-          const waterEntriesJson = await AsyncStorage.getItem('water_intake_entries');
+          const waterEntriesJson = await AsyncStorage.getItem(waterKey);
           if (waterEntriesJson) {
             const parsed = JSON.parse(waterEntriesJson);
             if (Array.isArray(parsed)) {
@@ -464,9 +474,10 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
         console.error('❌ Error loading sleep entries:', error);
       }
 
-      // 3. Load Nutrition (daily calories total)
+      // 3. Load Nutrition (daily calories total) - user-specific
       try {
-        const dailyCaloriesJson = await AsyncStorage.getItem('daily_calories');
+        const nutritionKey = user?.id ? getUserKey('daily_calories', user.id) : 'daily_calories';
+        const dailyCaloriesJson = await AsyncStorage.getItem(nutritionKey);
         if (dailyCaloriesJson) {
           const meals = JSON.parse(dailyCaloriesJson);
           if (meals && typeof meals === 'object') {
@@ -543,13 +554,21 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
    */
   const loadCalorieEntries = async () => {
     try {
-      // First try direct AsyncStorage read (most reliable)
-      // usePersistentState stores data in AppStateContext which is backed by AsyncStorage
-      // We can read directly from AsyncStorage to get the latest data
+      // Use user-specific key
+      const caloriesKey = user?.id ? getUserKey('burned_calories_entries', user.id) : 'burned_calories_entries';
+      
+      // First try AppStateContext (user-specific)
+      const entries = getState<CalorieEntry[]>(caloriesKey);
+      if (entries && Array.isArray(entries)) {
+        setLoadedCalorieEntries(entries);
+        return;
+      }
+      
+      // Fallback: Try direct AsyncStorage read (user-specific)
       const appStateJson = await AsyncStorage.getItem('@fithive:app_state');
       if (appStateJson) {
         const appState = JSON.parse(appStateJson);
-        const entries = appState?.burned_calories_entries;
+        const entries = appState?.[caloriesKey];
         if (entries && Array.isArray(entries)) {
           setLoadedCalorieEntries(entries);
           console.log(`🔥 Loaded ${entries.length} calorie entries from AsyncStorage`);
@@ -557,15 +576,9 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
         }
       }
 
-      // Fallback: Try AppStateContext (might not be loaded yet)
-      const entries = getState<CalorieEntry[]>('burned_calories_entries');
-      if (entries && Array.isArray(entries)) {
-        setLoadedCalorieEntries(entries);
-        console.log(`🔥 Loaded ${entries.length} calorie entries from AppStateContext`);
-      } else {
-        console.log('ℹ️ No calorie entries found in storage');
-        setLoadedCalorieEntries([]);
-      }
+      // No entries found for this user
+      console.log(`ℹ️ No calorie entries found for user ${user?.id}`);
+      setLoadedCalorieEntries([]);
     } catch (error) {
       console.error('❌ Error loading calorie entries:', error);
       setLoadedCalorieEntries([]);

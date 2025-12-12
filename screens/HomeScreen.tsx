@@ -1,4 +1,4 @@
-import React, { useState, useEffect }, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,15 @@ import FloatingAIButton from '../components/FloatingAIButton';
 
 import { Doctor } from './DoctorDetailsScreen';
 import { useHealthData } from '../contexts/HealthDataContext';
+import { getUserKey } from '../utils/userStorageUtils';
+import {
+  calculateMissionStatus,
+  saveDailyMissionStatus,
+  loadDailyMissionStatus,
+  DailyMissionStatus,
+  DAILY_GOALS as MISSION_GOALS,
+} from '../utils/dailyMissionManager';
+
 
 type RootStackParamList = {
   AllHealthData: undefined;
@@ -49,22 +58,26 @@ const DAILY_GOALS = {
 } as const;
 
 /**
- * Get today's date key for AsyncStorage
- * Format: "dailyMission_YYYYMMDD"
+ * Get today's date key for AsyncStorage (user-specific)
+ * Format: "dailyMission_YYYYMMDD_<userId>"
+ * 
+ * @param {string | null | undefined} userId - User ID from auth
+ * @returns {string} User-specific date key
  */
-const getTodayKey = (): string => {
+const getTodayKey = (userId: string | null | undefined): string => {
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
-  return `dailyMission_${year}${month}${day}`;
+  const baseKey = `dailyMission_${year}${month}${day}`;
+  return getUserKey(baseKey, userId);
 };
 
 /**
- * Check if a date is today
+ * Check if a date key is for today (user-specific)
  */
-const isToday = (dateKey: string): boolean => {
-  return dateKey === getTodayKey();
+const isToday = (dateKey: string, userId: string | null | undefined): boolean => {
+  return dateKey === getTodayKey(userId);
 };
 
 interface MissionCompletionState {
@@ -213,15 +226,35 @@ const HomeScreen: React.FC = () => {
     nutrition: false,
     sleep: false,
   });
-  const [lastDateKey, setLastDateKey] = useState<string>(getTodayKey());
+  const [missionStatus, setMissionStatus] = useState<DailyMissionStatus>({
+    waterDone: false,
+    burnedDone: false,
+    nutritionDone: false,
+    sleepDone: false,
+    completedCount: 0,
+    canClaimReward: false,
+  });
+  const [lastDateKey, setLastDateKey] = useState<string>(getTodayKey(user?.id));
 
   /**
-   * Load mission completion state from AsyncStorage for today
+   * Load mission completion state from AsyncStorage for today (user-specific)
    * If the date has changed, reset all missions
+   * Uses user-specific keys to ensure each user has isolated mission data
    */
   const loadMissionCompletion = useCallback(async () => {
+    if (!user?.id) {
+      // No user - reset to defaults
+      setMissionCompletion({
+        waterIntake: false,
+        burnedCalories: false,
+        nutrition: false,
+        sleep: false,
+      });
+      return;
+    }
+
     try {
-      const todayKey = getTodayKey();
+      const todayKey = getTodayKey(user.id);
       
       // Check if date has changed (new day or app reopened on new day)
       if (lastDateKey !== todayKey) {
@@ -234,16 +267,16 @@ const HomeScreen: React.FC = () => {
         };
         setMissionCompletion(resetState);
         setLastDateKey(todayKey);
-        // Clear old date's data (optional cleanup)
-        if (lastDateKey) {
+        // Clear old date's data (optional cleanup - user-specific)
+        if (lastDateKey && lastDateKey.includes(user.id)) {
           await AsyncStorage.removeItem(lastDateKey);
         }
-        // Save reset state for today
+        // Save reset state for today (user-specific)
         await AsyncStorage.setItem(todayKey, JSON.stringify(resetState));
         return;
       }
 
-      // Load today's completion state
+      // Load today's completion state (user-specific)
       const saved = await AsyncStorage.getItem(todayKey);
       if (saved) {
         const parsed = JSON.parse(saved) as MissionCompletionState;
@@ -262,19 +295,21 @@ const HomeScreen: React.FC = () => {
     } catch (error) {
       console.error('Error loading mission completion:', error);
     }
-  }, [lastDateKey]);
+  }, [lastDateKey, user?.id]);
 
   /**
-   * Save mission completion state to AsyncStorage
+   * Save mission completion state to AsyncStorage (user-specific)
    */
   const saveMissionCompletion = useCallback(async (state: MissionCompletionState) => {
+    if (!user?.id) return; // Don't save if no user
+    
     try {
-      const todayKey = getTodayKey();
+      const todayKey = getTodayKey(user.id);
       await AsyncStorage.setItem(todayKey, JSON.stringify(state));
     } catch (error) {
       console.error('Error saving mission completion:', error);
     }
-  }, []);
+  }, [user?.id]);
 
   /**
    * Check if a mission is completed based on current value vs goal
@@ -291,46 +326,98 @@ const HomeScreen: React.FC = () => {
   /**
    * Update mission completion state when health values change
    * This runs reactively whenever waterValue, burnedValue, nutritionValue, or sleepValue changes
+   * Also calculates canClaimReward status (requires 3+ missions completed)
    */
   useEffect(() => {
+    if (!user?.id) return;
+
+    // Calculate mission status using the new manager
+    const newStatus = calculateMissionStatus(
+      waterValue,
+      burnedValue,
+      nutritionValue,
+      sleepValue
+    );
+
+    // Convert to old format for backward compatibility
     const newCompletion: MissionCompletionState = {
-      waterIntake: checkMissionCompletion(waterValue, DAILY_GOALS.WATER_INTAKE),
-      burnedCalories: checkMissionCompletion(burnedValue, DAILY_GOALS.BURNED_CALORIES),
-      nutrition: checkMissionCompletion(nutritionValue, DAILY_GOALS.NUTRITION),
-      sleep: checkMissionCompletion(sleepValue, DAILY_GOALS.SLEEP),
+      waterIntake: newStatus.waterDone,
+      burnedCalories: newStatus.burnedDone,
+      nutrition: newStatus.nutritionDone,
+      sleep: newStatus.sleepDone,
     };
 
     // Only update if something changed to avoid unnecessary saves
     const hasChanged = 
-      newCompletion.waterIntake !== missionCompletion.waterIntake ||
-      newCompletion.burnedCalories !== missionCompletion.burnedCalories ||
-      newCompletion.nutrition !== missionCompletion.nutrition ||
-      newCompletion.sleep !== missionCompletion.sleep;
+      newStatus.waterDone !== missionStatus.waterDone ||
+      newStatus.burnedDone !== missionStatus.burnedDone ||
+      newStatus.nutritionDone !== missionStatus.nutritionDone ||
+      newStatus.sleepDone !== missionStatus.sleepDone ||
+      newStatus.canClaimReward !== missionStatus.canClaimReward;
 
     if (hasChanged) {
       setMissionCompletion(newCompletion);
-      saveMissionCompletion(newCompletion);
+      setMissionStatus(newStatus);
+      
+      // Save to AsyncStorage with user-specific key
+      saveDailyMissionStatus(user.id, newStatus).catch((error) => {
+        console.error('Error saving mission status:', error);
+      });
     }
-  }, [waterValue, burnedValue, nutritionValue, sleepValue, checkMissionCompletion, missionCompletion, saveMissionCompletion]);
+  }, [waterValue, burnedValue, nutritionValue, sleepValue, user?.id, missionStatus]);
 
   /**
    * Load mission completion on mount and when screen is focused
+   * Also loads mission status with canClaimReward flag
    */
   useFocusEffect(
     useCallback(() => {
       loadMissionCompletion();
-    }, [loadMissionCompletion])
+      
+      // Also load mission status
+      if (user?.id) {
+        loadDailyMissionStatus(user.id).then((status) => {
+          if (status) {
+            setMissionStatus(status);
+            // Update missionCompletion for backward compatibility
+            setMissionCompletion({
+              waterIntake: status.waterDone,
+              burnedCalories: status.burnedDone,
+              nutrition: status.nutritionDone,
+              sleep: status.sleepDone,
+            });
+          }
+        });
+      }
+    }, [loadMissionCompletion, user?.id])
   );
 
   /**
    * Listen for app state changes to detect date changes
    * When app comes to foreground, check if date has changed
+   * Also reload when user changes
    */
   useEffect(() => {
+    // Reload when user changes
+    if (user?.id) {
+      loadMissionCompletion();
+      setLastDateKey(getTodayKey(user.id));
+    } else {
+      // User logged out - reset missions
+      setMissionCompletion({
+        waterIntake: false,
+        burnedCalories: false,
+        nutrition: false,
+        sleep: false,
+      });
+    }
+  }, [user?.id, loadMissionCompletion]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
+      if (nextAppState === 'active' && user?.id) {
         // App came to foreground - check if date changed
-        const todayKey = getTodayKey();
+        const todayKey = getTodayKey(user.id);
         if (lastDateKey !== todayKey) {
           loadMissionCompletion();
         }
@@ -340,17 +427,18 @@ const HomeScreen: React.FC = () => {
     return () => {
       subscription.remove();
     };
-  }, [lastDateKey, loadMissionCompletion]);
+  }, [lastDateKey, loadMissionCompletion, user?.id]);
 
   /**
    * Calculate completed missions count
-   * Counts how many missions have been completed (currentValue >= goal)
+   * Uses missionStatus for accurate count and canClaimReward status
    */
   const completedMissions = useMemo(() => {
-    return Object.values(missionCompletion).filter(Boolean).length;
-  }, [missionCompletion]);
+    return missionStatus.completedCount;
+  }, [missionStatus]);
 
   const totalMissions = 4; // Water Intake, Burned Calories, Nutrition, Sleep
+  const canClaimReward = missionStatus.canClaimReward; // True when 3+ missions completed
 
   /**
    * Format health values for display in Highlights section
@@ -374,6 +462,9 @@ const HomeScreen: React.FC = () => {
     // Round to nearest integer and format as "XXXX kcal"
     return `${Math.round(nutritionValue)} kcal`;
   }, [nutritionValue]);
+
+
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -412,6 +503,25 @@ const HomeScreen: React.FC = () => {
           - Updates reactively when health values change in AllHealthDataScreen
         */}
         <MissionCard completed={completedMissions} total={totalMissions} />
+        
+        {/* Mission Status and Unlock Message */}
+        <View style={styles.missionStatusContainer}>
+          {canClaimReward ? (
+            <View style={styles.unlockMessage}>
+              <Ionicons name="lock-open" size={20} color="#4CAF50" />
+              <Text style={styles.unlockText}>
+                {completedMissions}/4 missions completed — Reward unlocked!
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.lockMessage}>
+              <Ionicons name="lock-closed" size={20} color="#F5A623" />
+              <Text style={styles.lockText}>
+                Complete at least 3 missions to unlock your reward
+              </Text>
+            </View>
+          )}
+        </View>
 
         <View style={styles.separator} />
 
@@ -770,6 +880,38 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E0E0E0',
     marginVertical: 20,
+  },
+  missionStatusContainer: {
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  unlockMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  unlockText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2E7D32',
+    flex: 1,
+  },
+  lockMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  lockText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E65100',
+    flex: 1,
   },
   section: {
     marginBottom: 24,

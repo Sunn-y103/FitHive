@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile, updateHealthFields } from '../services/profileService';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
+import { getUserKey } from '../utils/userStorageUtils';
 
 type NutritionScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Nutrition'>;
 
@@ -78,8 +80,11 @@ const NutritionScreen: React.FC = () => {
 
   const loadCalories = async () => {
     try {
-      // Try to load from AsyncStorage first
-      const saved = await AsyncStorage.getItem('daily_calories');
+      // Try to load from AsyncStorage first (user-specific)
+      // Get user ID from auth context
+      const { data: { user } } = await supabase.auth.getUser();
+      const nutritionKey = getUserKey('daily_calories', user?.id);
+      const saved = await AsyncStorage.getItem(nutritionKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         setMeals(parsed);
@@ -169,8 +174,10 @@ const NutritionScreen: React.FC = () => {
     try {
       setSaving(true);
       
-      // Save to AsyncStorage
-      await AsyncStorage.setItem('daily_calories', JSON.stringify(meals));
+      // Save to AsyncStorage (user-specific)
+      const { data: { user } } = await supabase.auth.getUser();
+      const nutritionKey = getUserKey('daily_calories', user?.id);
+      await AsyncStorage.setItem(nutritionKey, JSON.stringify(meals));
       
       // TODO: If you have a backend API, save to user profile here:
       // const profile = await fetchProfile();
