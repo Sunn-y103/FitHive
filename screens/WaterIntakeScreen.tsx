@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useUserPersistentState } from '../hooks/useUserPersistentState';
+import { useHealthData } from '../contexts/HealthDataContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRAPH_WIDTH = SCREEN_WIDTH - 80;
@@ -39,10 +40,39 @@ const WaterIntakeScreen: React.FC = () => {
   const [waterAmount, setWaterAmount] = useState('');
   const [selectedTime, setSelectedTime] = useState(0);
   
+  // Get shared water intake value from HealthDataContext
+  // This ensures consistency across all screens (WaterIntakeScreen, AllHealthDataScreen, HomeScreen)
+  const { setWaterValue } = useHealthData();
+  
   // Persistent state - automatically saved and restored (user-specific)
   // Keys are automatically prefixed with userId: 'water_intake_entries_<userId>'
   const [activeTab, setActiveTab] = useUserPersistentState<TabType>('water_intake_active_tab', 'Today');
   const [entries, setEntries] = useUserPersistentState<WaterEntry[]>('water_intake_entries', []);
+
+  /**
+   * Calculate total water intake for today (from midnight to now)
+   * This is the shared value that will be displayed across all screens
+   */
+  const calculateTodayTotal = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0); // Midnight today
+    
+    const todayEntries = entries.filter((entry) => {
+      const entryDate = new Date(entry.timestamp);
+      return entryDate >= todayStart && entryDate <= now;
+    });
+    
+    const total = todayEntries.reduce((sum, entry) => sum + entry.liters, 0);
+    return total;
+  }, [entries]);
+
+  /**
+   * Update HealthDataContext whenever entries change
+   * This ensures real-time sync across all screens
+   */
+  useEffect(() => {
+    setWaterValue(calculateTodayTotal > 0 ? calculateTodayTotal : null);
+  }, [calculateTodayTotal, setWaterValue]);
 
   const handleAddWater = async () => {
     const amount = parseFloat(waterAmount);

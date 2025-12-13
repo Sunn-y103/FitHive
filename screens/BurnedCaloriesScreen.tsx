@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile } from '../services/profileService';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useUserPersistentState } from '../hooks/useUserPersistentState';
+import { useHealthData } from '../contexts/HealthDataContext';
 
 type BurnedCaloriesScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BurnedCalories'>;
 
@@ -49,15 +50,29 @@ const BurnedCaloriesScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [weight, setWeight] = useState<number | null>(null);
 
+  // Get shared burned calories values from HealthDataContext
+  // totalBurnedCalories is a derived value (treadmillCalories + cyclingCalories) shared across all screens
+  const { 
+    treadmillCalories: contextTreadmillCalories, 
+    cyclingCalories: contextCyclingCalories,
+    totalBurnedCalories,
+    setTreadmillCalories,
+    setCyclingCalories 
+  } = useHealthData();
+
   // Treadmill inputs
   const [treadmillSpeed, setTreadmillSpeed] = useState('');
   const [treadmillTime, setTreadmillTime] = useState('');
-  const [treadmillCalories, setTreadmillCalories] = useState<number | null>(null);
+  // Use context value, fallback to local state for display
+  const [localTreadmillCalories, setLocalTreadmillCalories] = useState<number | null>(null);
+  const treadmillCalories = contextTreadmillCalories !== null ? contextTreadmillCalories : localTreadmillCalories;
 
   // Cycling inputs
   const [cyclingSpeed, setCyclingSpeed] = useState('');
   const [cyclingTime, setCyclingTime] = useState('');
-  const [cyclingCalories, setCyclingCalories] = useState<number | null>(null);
+  // Use context value, fallback to local state for display
+  const [localCyclingCalories, setLocalCyclingCalories] = useState<number | null>(null);
+  const cyclingCalories = contextCyclingCalories !== null ? contextCyclingCalories : localCyclingCalories;
 
   // Load and save calorie entries (user-specific)
   // Key is automatically prefixed with userId: 'burned_calories_entries_<userId>'
@@ -129,7 +144,10 @@ const BurnedCaloriesScreen: React.FC = () => {
     // Calculate calories
     const calories = 0.1 * speed * weight * timeHours;
     const roundedCalories = Math.round(calories * 100) / 100; // Round to 2 decimals
-    setTreadmillCalories(roundedCalories);
+    
+    // Update both local state and shared context
+    setLocalTreadmillCalories(roundedCalories);
+    setTreadmillCalories(roundedCalories); // Update shared context (updates totalBurnedCalories automatically)
 
     // Save to storage
     const newEntry: CalorieEntry = {
@@ -172,7 +190,10 @@ const BurnedCaloriesScreen: React.FC = () => {
     // Calculate calories
     const calories = 0.2 * speed * weight * timeHours;
     const roundedCalories = Math.round(calories * 100) / 100; // Round to 2 decimals
-    setCyclingCalories(roundedCalories);
+    
+    // Update both local state and shared context
+    setLocalCyclingCalories(roundedCalories);
+    setCyclingCalories(roundedCalories); // Update shared context (updates totalBurnedCalories automatically)
 
     // Save to storage
     const newEntry: CalorieEntry = {
@@ -188,8 +209,9 @@ const BurnedCaloriesScreen: React.FC = () => {
     });
   };
 
-  // Calculate total burned calories
-  const totalCalories = (treadmillCalories || 0) + (cyclingCalories || 0);
+  // totalBurnedCalories is now provided by HealthDataContext
+  // It's a derived value: treadmillCalories + cyclingCalories
+  // This ensures consistency across all screens (BurnedCaloriesScreen, AllHealthDataScreen, HomeScreen)
 
   if (loading) {
     return (
@@ -255,10 +277,14 @@ const BurnedCaloriesScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Weight Info */}
-        <View style={styles.weightInfo}>
-          <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
-          <Text style={styles.weightText}>Your Weight: {weight} kg</Text>
+        {/* Total Burned Calories Container - Read-only, auto-calculated */}
+        {/* This container displays the sum of Treadmill + Cycling calories */}
+        {/* It updates in real-time whenever treadmill or cycling values change */}
+        {/* Uses shared totalBurnedCalories from HealthDataContext for consistency across screens */}
+        <View style={styles.totalBurnedContainer}>
+          <Text style={styles.totalBurnedTitle}>Total Burned Calories</Text>
+          <Text style={styles.totalBurnedValue}>{totalBurnedCalories.toFixed(0)} kcal</Text>
+          <Text style={styles.totalBurnedSubtext}>Treadmill + Cycling</Text>
         </View>
 
         {/* Treadmill Section */}
@@ -359,13 +385,7 @@ const BurnedCaloriesScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Total Calories */}
-        {totalCalories > 0 && (
-          <View style={styles.totalContainer}>
-            <Text style={styles.totalLabel}>Total Burned Calories</Text>
-            <Text style={styles.totalValue}>{totalCalories.toFixed(2)} kcal</Text>
-          </View>
-        )}
+        {/* Total Calories - Removed duplicate display, using top container instead */}
 
         {/* ADDED: Daily Goal container - Fixed at the bottom of Burned Calories screen */}
         {/* This Goal container is STATIC (unchangeable by user) and stays at the bottom */}
@@ -455,6 +475,43 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     marginLeft: 8,
     fontWeight: '500',
+  },
+  // Total Burned Calories Container - Read-only, auto-calculated
+  // Displays at the top of the screen, above Treadmill and Cycling sections
+  // Updates in real-time when treadmill or cycling calories change
+  totalBurnedContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  totalBurnedTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+  },
+  totalBurnedValue: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  totalBurnedSubtext: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
   },
   section: {
     backgroundColor: COLORS.white,

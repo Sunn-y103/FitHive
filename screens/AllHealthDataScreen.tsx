@@ -308,7 +308,8 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
   const navigation = useNavigation<AllHealthDataScreenNavigationProp>();
   const { user } = useAuth();
   const { getState } = useAppState();
-  const { setWaterValue, setBurnedValue, setNutritionValue, setSleepValue } = useHealthData();
+  // totalBurnedCalories is a derived value (treadmillCalories + cyclingCalories) shared across all screens
+  const { setWaterValue, setBurnedValue, setNutritionValue, setSleepValue, totalBurnedCalories } = useHealthData();
   const [showWorkoutModal, setShowWorkoutModal] = useState(false);
   const [latestWorkout, setLatestWorkout] = useState<{ reps: number; exercise: string; date: string } | null>(null);
   const [loadingWorkout, setLoadingWorkout] = useState(true);
@@ -607,10 +608,29 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
     return result;
   }, [entries, updateTrigger]);
   
-  const waterAverage = useMemo(() => {
-    const result = averageLast24Hours(entries, 'water');
-    console.log(`💧 Water average: ${result.average}L (from ${result.count} entries)`);
-    return result;
+  // Calculate total water intake for today (from midnight to now)
+  // This is the shared value displayed across all screens (not an average)
+  const waterTotalToday = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0); // Midnight today
+    
+    const todayEntries = entries.filter((entry) => {
+      if (entry.type !== 'water') return false;
+      
+      // Convert timestamp to Date
+      let entryDate: Date;
+      if (typeof entry.timestamp === 'string') {
+        entryDate = new Date(entry.timestamp);
+      } else {
+        entryDate = new Date(entry.timestamp);
+      }
+      
+      return entryDate >= todayStart && entryDate <= now;
+    });
+    
+    const total = todayEntries.reduce((sum, entry) => sum + entry.value, 0);
+    console.log(`💧 Water total today: ${total}L (from ${todayEntries.length} entries)`);
+    return total;
   }, [entries, updateTrigger]);
   
   const sleepAverage = useMemo(() => {
@@ -633,14 +653,15 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
     return result;
   }, [calorieEntries, updateTrigger]);
 
-  // Update context values whenever averages change
+  // Update context values whenever values change
   // This allows HomeScreen to reactively update mission completion status
+  // Note: waterValue is now total for today (not average), shared across all screens
   useEffect(() => {
-    setWaterValue(waterAverage.average);
+    setWaterValue(waterTotalToday > 0 ? waterTotalToday : null);
     setBurnedValue(burnedCaloriesAverage.average);
     setNutritionValue(nutritionAverage.average);
     setSleepValue(sleepAverage.average);
-  }, [waterAverage.average, burnedCaloriesAverage.average, nutritionAverage.average, sleepAverage.average, setWaterValue, setBurnedValue, setNutritionValue, setSleepValue]);
+  }, [waterTotalToday, burnedCaloriesAverage.average, nutritionAverage.average, sleepAverage.average, setWaterValue, setBurnedValue, setNutritionValue, setSleepValue]);
 
   // Format average value for display
   const formatAverage = (
@@ -704,7 +725,10 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
       icon: 'water-outline' as keyof typeof Ionicons.glyphMap,
       iconBackgroundColor: '#63e5ff',
       title: 'Water Intake',
-      value: formatAverage(waterAverage, 1, 'L'),
+      // Display total water intake for today (shared value from HealthDataContext)
+      value: waterTotalToday > 0 
+        ? `${waterTotalToday.toFixed(1)} L`
+        : '0 L',
       unit: '',
     },
     {
@@ -738,12 +762,12 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
       icon: 'flame' as keyof typeof Ionicons.glyphMap,
       iconBackgroundColor: '#F5A623',
       title: 'Burned calories',
-      value: burnedCaloriesAverage.average !== null 
-        ? `${Math.round(burnedCaloriesAverage.average)}`
+      value: totalBurnedCalories > 0 
+        ? `${Math.round(totalBurnedCalories)}`
         : 'No data',
-      unit: burnedCaloriesAverage.average !== null ? 'kcal' : '',
-      subtitle: burnedCaloriesAverage.count > 0 
-        ? `based on ${burnedCaloriesAverage.count} ${burnedCaloriesAverage.count === 1 ? 'entry' : 'entries'}`
+      unit: totalBurnedCalories > 0 ? 'kcal' : '',
+      subtitle: totalBurnedCalories > 0 
+        ? 'Treadmill + Cycling'
         : undefined,
     },
     {

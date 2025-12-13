@@ -12,7 +12,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserKey } from './userStorageUtils';
-import { todayKey } from './storageUtils';
+import { todayKey, loadJSON, saveJSON } from './storageUtils';
 
 // ============================================================================
 // TYPES
@@ -38,6 +38,16 @@ export interface MissionCompletionState {
   burnedCalories: boolean;
   nutrition: boolean;
   sleep: boolean;
+}
+
+/**
+ * Reward state for today
+ */
+export interface RewardStateForToday {
+  completedCount: number;      // 0-4
+  unlocked: boolean;           // completedCount >= 3
+  claimedToday: boolean;        // true if reward already claimed today
+  canClaim: boolean;           // unlocked && !claimedToday
 }
 
 // ============================================================================
@@ -282,5 +292,119 @@ export async function getOrCreateDailyMissionStatus(
   await saveDailyMissionStatus(userId, newStatus, dateStr);
   
   return newStatus;
+}
+
+// ============================================================================
+// REWARD CLAIM STATUS HELPERS
+// ============================================================================
+
+/**
+ * Check if reward has been claimed today for a user
+ * 
+ * @param {string | null | undefined} userId - User ID
+ * @param {string} dateStr - Date string (defaults to today)
+ * @returns {Promise<boolean>} True if reward was claimed today
+ */
+export async function isRewardClaimedToday(
+  userId: string | null | undefined,
+  dateStr: string = todayKey()
+): Promise<boolean> {
+  if (!userId) {
+    return false;
+  }
+  
+  try {
+    const claimKey = getUserKey(`rewardClaimed_${dateStr}`, userId);
+    const claimed = await loadJSON(claimKey);
+    return claimed === true;
+  } catch (error) {
+    console.error('Error checking reward claim status:', error);
+    return false;
+  }
+}
+
+/**
+ * Mark reward as claimed for today
+ * 
+ * @param {string | null | undefined} userId - User ID
+ * @param {string} dateStr - Date string (defaults to today)
+ * @returns {Promise<boolean>} True if saved successfully
+ */
+export async function markRewardClaimedToday(
+  userId: string | null | undefined,
+  dateStr: string = todayKey()
+): Promise<boolean> {
+  if (!userId) {
+    return false;
+  }
+  
+  try {
+    const claimKey = getUserKey(`rewardClaimed_${dateStr}`, userId);
+    return await saveJSON(claimKey, true);
+  } catch (error) {
+    console.error('Error marking reward as claimed:', error);
+    return false;
+  }
+}
+
+/**
+ * Get complete reward state for today
+ * 
+ * This function combines mission completion status and claim status
+ * to determine the current reward button state.
+ * 
+ * @param {string | null | undefined} userId - User ID
+ * @param {DailyMissionStatus | null} missionStatus - Optional pre-calculated mission status
+ * @param {number | null} waterValue - Current water intake
+ * @param {number | null} burnedValue - Current burned calories
+ * @param {number | null} nutritionValue - Current nutrition calories
+ * @param {number | null} sleepValue - Current sleep hours
+ * @returns {Promise<RewardStateForToday>} Complete reward state
+ */
+export async function getRewardStateForToday(
+  userId: string | null | undefined,
+  missionStatus: DailyMissionStatus | null = null,
+  waterValue: number | null = null,
+  burnedValue: number | null = null,
+  nutritionValue: number | null = null,
+  sleepValue: number | null = null
+): Promise<RewardStateForToday> {
+  if (!userId) {
+    return {
+      completedCount: 0,
+      unlocked: false,
+      claimedToday: false,
+      canClaim: false,
+    };
+  }
+
+  try {
+    // Calculate mission status if not provided
+    let status = missionStatus;
+    if (!status) {
+      status = calculateMissionStatus(waterValue, burnedValue, nutritionValue, sleepValue);
+    }
+
+    // Check if reward was already claimed today
+    const claimedToday = await isRewardClaimedToday(userId);
+
+    // Determine unlock status
+    const unlocked = status.completedCount >= MIN_MISSIONS_FOR_REWARD;
+
+    return {
+      completedCount: status.completedCount,
+      unlocked,
+      claimedToday,
+      canClaim: unlocked && !claimedToday,
+    };
+  } catch (error) {
+    console.error('Error getting reward state:', error);
+    return {
+      completedCount: 0,
+      unlocked: false,
+      claimedToday: false,
+      canClaim: false,
+    };
+  }
 }
 

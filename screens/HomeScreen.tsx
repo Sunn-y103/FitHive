@@ -216,10 +216,12 @@ const HomeScreen: React.FC = () => {
    *    → Values update reactively whenever HealthDataContext changes
    *    → Highlights containers display formatted values automatically
    * 
-   * This ensures Highlights always show the latest calculated averages from AllHealthDataScreen,
-   * which updates whenever the screen is focused or data changes.
+   * For Burned Calories:
+   * - totalBurnedCalories is a derived value (treadmillCalories + cyclingCalories) shared across all screens
+   * - Updated in real-time when user calculates treadmill or cycling calories in BurnedCaloriesScreen
+   * - This ensures consistency across BurnedCaloriesScreen, AllHealthDataScreen, and HomeScreen
    */
-  const { waterValue, burnedValue, nutritionValue, sleepValue } = useHealthData();
+  const { waterValue, burnedValue, nutritionValue, sleepValue, totalBurnedCalories } = useHealthData();
   const [missionCompletion, setMissionCompletion] = useState<MissionCompletionState>({
     waterIntake: false,
     burnedCalories: false,
@@ -325,16 +327,21 @@ const HomeScreen: React.FC = () => {
 
   /**
    * Update mission completion state when health values change
-   * This runs reactively whenever waterValue, burnedValue, nutritionValue, or sleepValue changes
+   * This runs reactively whenever waterValue, totalBurnedCalories, nutritionValue, or sleepValue changes
    * Also calculates canClaimReward status (requires 3+ missions completed)
+   * 
+   * Note: Uses totalBurnedCalories (treadmill + cycling) instead of burnedValue (average)
+   * for mission completion check
    */
   useEffect(() => {
     if (!user?.id) return;
 
     // Calculate mission status using the new manager
+    // Use totalBurnedCalories for burned calories mission (treadmill + cycling)
+    // totalBurnedCalories is always a number (defaults to 0), so pass null if 0 for mission check
     const newStatus = calculateMissionStatus(
       waterValue,
-      burnedValue,
+      totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
       nutritionValue,
       sleepValue
     );
@@ -364,7 +371,7 @@ const HomeScreen: React.FC = () => {
         console.error('Error saving mission status:', error);
       });
     }
-  }, [waterValue, burnedValue, nutritionValue, sleepValue, user?.id, missionStatus]);
+  }, [waterValue, totalBurnedCalories, nutritionValue, sleepValue, user?.id, missionStatus]);
 
   /**
    * Load mission completion on mount and when screen is focused
@@ -443,19 +450,26 @@ const HomeScreen: React.FC = () => {
   /**
    * Format health values for display in Highlights section
    * These values update reactively whenever HealthDataContext values change
-   * (which happens when AllHealthDataScreen updates them)
+   * 
+   * For Water Intake:
+   * - waterValue is the total water intake for today (from midnight to now)
+   * - Updated in real-time when user adds water in WaterIntakeScreen
+   * - This ensures consistency across WaterIntakeScreen, AllHealthDataScreen, and HomeScreen
    */
   const formattedWaterValue = useMemo(() => {
     if (waterValue === null || waterValue === undefined) return '0 L';
-    // Round to 1 decimal place and format as "X.X L"
-    return `${Math.round(waterValue * 10) / 10} L`;
+    // Format to 1 decimal place and display as "X.X L"
+    return `${waterValue.toFixed(1)} L`;
   }, [waterValue]);
 
+  // Use totalBurnedCalories (treadmill + cycling) instead of burnedValue (average)
+  // totalBurnedCalories is a derived value shared across all screens for consistency
+  // It's always a number (defaults to 0 if both treadmill and cycling are null)
   const formattedBurnedCaloriesValue = useMemo(() => {
-    if (burnedValue === null || burnedValue === undefined) return '0 kcal';
+    if (totalBurnedCalories === 0) return '0 kcal';
     // Round to nearest integer and format as "XXX kcal"
-    return `${Math.round(burnedValue)} kcal`;
-  }, [burnedValue]);
+    return `${Math.round(totalBurnedCalories)} kcal`;
+  }, [totalBurnedCalories]);
 
   const formattedNutritionValue = useMemo(() => {
     if (nutritionValue === null || nutritionValue === undefined) return '0 kcal';
@@ -532,7 +546,8 @@ const HomeScreen: React.FC = () => {
             {/* Water Intake */}
             {/* 
               Value updates automatically from HealthDataContext
-              AllHealthDataScreen updates waterValue whenever user logs water intake
+              waterValue is the total water intake for today (shared across all screens)
+              Updated in real-time when user adds water in WaterIntakeScreen
             */}
             <View style={styles.highlightItem}>
               <TouchableOpacity
@@ -569,7 +584,9 @@ const HomeScreen: React.FC = () => {
             {/* ADDED: Burned Calories container */}
             {/* 
               Value updates automatically from HealthDataContext
-              AllHealthDataScreen updates burnedValue whenever user calculates burned calories
+              Uses totalBurnedCalories (treadmill + cycling) which is updated in real-time
+              when user calculates calories in BurnedCaloriesScreen
+              This ensures consistency across all screens
             */}
             <View style={styles.highlightItem}>
               <TouchableOpacity

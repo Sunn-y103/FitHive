@@ -20,11 +20,20 @@ interface HealthDataContextType {
   nutritionValue: number | null;
   sleepValue: number | null;
   
+  // Burned calories breakdown (for total calculation)
+  treadmillCalories: number | null;
+  cyclingCalories: number | null;
+  // totalBurnedCalories is a derived value: treadmillCalories + cyclingCalories
+  // It is calculated dynamically and shared across all screens
+  totalBurnedCalories: number;
+  
   // Update functions
   setWaterValue: (value: number | null) => void;
   setBurnedValue: (value: number | null) => void;
   setNutritionValue: (value: number | null) => void;
   setSleepValue: (value: number | null) => void;
+  setTreadmillCalories: (value: number | null) => void;
+  setCyclingCalories: (value: number | null) => void;
 }
 
 const HealthDataContext = createContext<HealthDataContextType | undefined>(undefined);
@@ -39,6 +48,12 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
   const [burnedValue, setBurnedValueState] = useState<number | null>(null);
   const [nutritionValue, setNutritionValueState] = useState<number | null>(null);
   const [sleepValue, setSleepValueState] = useState<number | null>(null);
+  const [treadmillCalories, setTreadmillCaloriesState] = useState<number | null>(null);
+  const [cyclingCalories, setCyclingCaloriesState] = useState<number | null>(null);
+  
+  // totalBurnedCalories is a derived value - calculated dynamically from treadmill + cycling
+  // This is the single source of truth shared across all screens
+  const totalBurnedCalories = (treadmillCalories || 0) + (cyclingCalories || 0);
 
   /**
    * Load user-specific health data from AsyncStorage
@@ -51,6 +66,8 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
       setBurnedValueState(null);
       setNutritionValueState(null);
       setSleepValueState(null);
+      setTreadmillCaloriesState(null);
+      setCyclingCaloriesState(null);
       return;
     }
 
@@ -61,12 +78,16 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
       const burnedKey = getUserKey('health_burnedValue', userId);
       const nutritionKey = getUserKey('health_nutritionValue', userId);
       const sleepKey = getUserKey('health_sleepValue', userId);
+      const treadmillKey = getUserKey('health_treadmillCalories', userId);
+      const cyclingKey = getUserKey('health_cyclingCalories', userId);
 
-      const [water, burned, nutrition, sleep] = await Promise.all([
+      const [water, burned, nutrition, sleep, treadmill, cycling] = await Promise.all([
         AsyncStorage.getItem(waterKey),
         AsyncStorage.getItem(burnedKey),
         AsyncStorage.getItem(nutritionKey),
         AsyncStorage.getItem(sleepKey),
+        AsyncStorage.getItem(treadmillKey),
+        AsyncStorage.getItem(cyclingKey),
       ]);
 
       // Parse and set values
@@ -74,6 +95,8 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
       setBurnedValueState(burned ? parseFloat(burned) : null);
       setNutritionValueState(nutrition ? parseFloat(nutrition) : null);
       setSleepValueState(sleep ? parseFloat(sleep) : null);
+      setTreadmillCaloriesState(treadmill ? parseFloat(treadmill) : null);
+      setCyclingCaloriesState(cycling ? parseFloat(cycling) : null);
     } catch (error) {
       console.error('Error loading user health data:', error);
       // On error, set to null (no data available)
@@ -81,6 +104,8 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
       setBurnedValueState(null);
       setNutritionValueState(null);
       setSleepValueState(null);
+      setTreadmillCaloriesState(null);
+      setCyclingCaloriesState(null);
     }
   }, []);
 
@@ -143,15 +168,44 @@ export const HealthDataProvider: React.FC<HealthDataProviderProps> = ({ children
     }
   }, [user?.id]);
 
+  const updateTreadmillCalories = useCallback(async (value: number | null) => {
+    setTreadmillCaloriesState(value);
+    if (user?.id) {
+      try {
+        const key = getUserKey('health_treadmillCalories', user.id);
+        await AsyncStorage.setItem(key, value !== null ? String(value) : '');
+      } catch (error) {
+        console.error('Error saving treadmill calories:', error);
+      }
+    }
+  }, [user?.id]);
+
+  const updateCyclingCalories = useCallback(async (value: number | null) => {
+    setCyclingCaloriesState(value);
+    if (user?.id) {
+      try {
+        const key = getUserKey('health_cyclingCalories', user.id);
+        await AsyncStorage.setItem(key, value !== null ? String(value) : '');
+      } catch (error) {
+        console.error('Error saving cycling calories:', error);
+      }
+    }
+  }, [user?.id]);
+
   const value: HealthDataContextType = {
     waterValue,
     burnedValue,
     nutritionValue,
     sleepValue,
+    treadmillCalories,
+    cyclingCalories,
+    totalBurnedCalories, // Derived value: treadmillCalories + cyclingCalories
     setWaterValue: updateWaterValue,
     setBurnedValue: updateBurnedValue,
     setNutritionValue: updateNutritionValue,
     setSleepValue: updateSleepValue,
+    setTreadmillCalories: updateTreadmillCalories,
+    setCyclingCalories: updateCyclingCalories,
   };
 
   return (
