@@ -1,3 +1,10 @@
+/**
+ * Create Challenge Screen
+ * 
+ * UI-only screen for creating challenges (frontend-only, no backend).
+ * Used for demo and hackathon purposes.
+ */
+
 import React, { useState } from 'react';
 import {
   View,
@@ -7,16 +14,15 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Image,
   Alert,
-  ActivityIndicator,
+  Platform,
+  StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import Slider from '@react-native-community/slider';
-import * as ImagePicker from 'expo-image-picker';
-import { useChallenges } from '../contexts/ChallengeContext';
+import { setPendingChallenge, ChallengeData } from '../utils/challengeStore';
 
 const COLORS = {
   primary: '#A992F6',
@@ -30,63 +36,34 @@ const COLORS = {
   border: '#E8E8F0',
   borderLight: '#F0F0F0',
   error: '#FF6B6B',
-  success: '#4CAF50',
 };
 
 type RootStackParamList = {
-  HomeTabs: undefined;
   CreateChallenge: undefined;
+  Community: undefined;
 };
 
-type NavigationProp = StackNavigationProp<RootStackParamList>;
+type CreateChallengeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'CreateChallenge'>;
 
 const CreateChallengeScreen: React.FC = () => {
-  const navigation = useNavigation<NavigationProp>();
-  const { addChallenge } = useChallenges();
+  const navigation = useNavigation<CreateChallengeScreenNavigationProp>();
 
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [rulesText, setRulesText] = useState('');
+  const [numberOfPeople, setNumberOfPeople] = useState('');
   const [location, setLocation] = useState('');
-  const [time, setTime] = useState('');
-  const [maxParticipants, setMaxParticipants] = useState(100);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [pickingImage, setPickingImage] = useState(false);
 
-  // Handle image picker
-  const handlePickImage = async () => {
-    try {
-      setPickingImage(true);
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'Please allow access to your photo library to upload images.');
-        return;
-      }
+  // Validate form - all fields must be filled
+  const isFormValid = 
+    title.trim().length > 0 &&
+    description.trim().length > 0 &&
+    numberOfPeople.trim().length > 0 &&
+    location.trim().length > 0;
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [16, 9],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setSelectedImage(result.assets[0].uri);
-        console.log('📷 Image selected:', result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('❌ Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    } finally {
-      setPickingImage(false);
-    }
-  };
-
-  // Handle submit
-  const handleSubmit = () => {
-    // Validation
+  // Handle participate button press
+  const handleParticipate = () => {
+    // Validate all fields
     if (!title.trim()) {
       Alert.alert('Required Field', 'Please enter a challenge title.');
       return;
@@ -97,51 +74,67 @@ const CreateChallengeScreen: React.FC = () => {
       return;
     }
 
-    // Parse rules from multi-line text
-    const rules = rulesText
-      .split('\n')
-      .map(rule => rule.trim())
-      .filter(rule => rule.length > 0);
-
-    if (rules.length === 0) {
-      Alert.alert('Required Field', 'Please add at least one challenge rule.');
+    if (!numberOfPeople.trim() || isNaN(Number(numberOfPeople)) || Number(numberOfPeople) <= 0) {
+      Alert.alert('Invalid Input', 'Please enter a valid number of people.');
       return;
     }
 
-    // Create challenge in context
-    addChallenge({
+    if (!location.trim()) {
+      Alert.alert('Required Field', 'Please enter a location.');
+      return;
+    }
+
+    // Default challenge image (using one of the featured challenge images)
+    const defaultChallengeImages = [
+      'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80',
+      'https://images.unsplash.com/photo-1452626038306-9aae5e071dd3?w=600&q=80',
+      'https://images.unsplash.com/photo-1517649763962-0c623066013b?w=600&q=80',
+      'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=600&q=80',
+    ];
+    // Randomly select an image from the default set
+    const randomImage = defaultChallengeImages[Math.floor(Math.random() * defaultChallengeImages.length)];
+
+    // Create challenge object
+    const newChallenge: ChallengeData = {
+      id: `challenge-${Date.now()}`, // Generate unique ID
       title: title.trim(),
       description: description.trim(),
-      rules: rules,
-      maxParticipants: maxParticipants,
-      location: location.trim() || 'Not specified',
-      time: time.trim() || 'TBD',
-      image: selectedImage,
-    });
+      createdAt: new Date().toISOString(), // Current timestamp
+      numberOfPeople: Number(numberOfPeople) || 0, // Store number of people
+      location: location.trim() || 'Not specified', // Store location
+      image: randomImage, // Assign default featured challenge image
+    };
 
-    Alert.alert('Success', 'Challenge created successfully!', [
-      {
-        text: 'OK',
-        onPress: () => {
-          // Reset form
-          setTitle('');
-          setDescription('');
-          setRulesText('');
-          setLocation('');
-          setTime('');
-          setMaxParticipants(100);
-          setSelectedImage(null);
-          // Navigate back
-          navigation.goBack();
+    // Store challenge in in-memory store to be picked up by CommunityScreen
+    setPendingChallenge(newChallenge);
+
+    // Show success alert
+    Alert.alert(
+      'Success!',
+      `Challenge "${title}" created successfully!`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Reset form
+            setTitle('');
+            setDescription('');
+            setNumberOfPeople('');
+            setLocation('');
+            // Navigate back - CommunityScreen will pick up the challenge via useFocusEffect
+            navigation.goBack();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
-
-  const isFormValid = title.trim().length > 0 && description.trim().length > 0 && rulesText.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -155,166 +148,100 @@ const CreateChallengeScreen: React.FC = () => {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {/* Challenge Title */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Challenge Title <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter challenge title"
-            placeholderTextColor={COLORS.textSecondary}
-            value={title}
-            onChangeText={setTitle}
-            maxLength={100}
-          />
-        </View>
-
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Description <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Describe the challenge..."
-            placeholderTextColor={COLORS.textSecondary}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            maxLength={500}
-          />
-        </View>
-
-        {/* Challenge Rules */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Challenge Rules <Text style={styles.required}>*</Text>
-          </Text>
-          <Text style={styles.hintText}>Enter each rule on a new line</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Rule 1&#10;Rule 2&#10;Rule 3"
-            placeholderTextColor={COLORS.textSecondary}
-            value={rulesText}
-            onChangeText={setRulesText}
-            multiline
-            numberOfLines={6}
-            textAlignVertical="top"
-          />
-        </View>
-
-        {/* Max Participants */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Max Participants</Text>
-          <View style={styles.sliderContainer}>
-            <Text style={styles.sliderValue}>{maxParticipants}</Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={1}
-              maximumValue={500}
-              value={maxParticipants}
-              onValueChange={setMaxParticipants}
-              minimumTrackTintColor={COLORS.primary}
-              maximumTrackTintColor={COLORS.border}
-              thumbTintColor={COLORS.primary}
-              step={1}
-            />
-            <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabel}>1</Text>
-              <Text style={styles.sliderLabel}>500</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Location */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Location</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter location"
-            placeholderTextColor={COLORS.textSecondary}
-            value={location}
-            onChangeText={setLocation}
-            maxLength={100}
-          />
-        </View>
-
-        {/* Time */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Time</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter time (e.g., Jan 14 - Feb 14)"
-            placeholderTextColor={COLORS.textSecondary}
-            value={time}
-            onChangeText={setTime}
-            maxLength={100}
-          />
-        </View>
-
-        {/* Challenge Banner Image */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Challenge Banner Image</Text>
-          {selectedImage ? (
-            <View style={styles.imagePreviewContainer}>
-              <Image
-                source={{ uri: selectedImage }}
-                style={styles.imagePreview}
-                resizeMode="cover"
-              />
-              <TouchableOpacity
-                style={styles.removeImageButton}
-                onPress={() => setSelectedImage(null)}
-                accessibilityLabel="Remove image"
-              >
-                <Ionicons name="close-circle" size={24} color={COLORS.white} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.uploadImageButton}
-              onPress={handlePickImage}
-              disabled={pickingImage}
-              activeOpacity={0.7}
-            >
-              {pickingImage ? (
-                <ActivityIndicator size="small" color={COLORS.primary} />
-              ) : (
-                <>
-                  <Ionicons name="image-outline" size={24} color={COLORS.primary} />
-                  <Text style={styles.uploadImageText}>Upload Image</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Bottom Spacer */}
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
-
-      {/* Submit Button */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity
-          style={[
-            styles.submitButton,
-            (!isFormValid || pickingImage) && styles.submitButtonDisabled,
-          ]}
-          onPress={handleSubmit}
-          disabled={!isFormValid || pickingImage}
-          activeOpacity={0.8}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.submitButtonText}>Create Challenge</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Challenge Title */}
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              Challenge Title <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter challenge title"
+              placeholderTextColor={COLORS.textSecondary}
+              value={title}
+              onChangeText={setTitle}
+              maxLength={100}
+            />
+          </View>
+
+          {/* Short Description */}
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              Short Description <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Describe the challenge..."
+              placeholderTextColor={COLORS.textSecondary}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              maxLength={500}
+            />
+          </View>
+
+          {/* Number of People */}
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              Number of People <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter number of people"
+              placeholderTextColor={COLORS.textSecondary}
+              value={numberOfPeople}
+              onChangeText={setNumberOfPeople}
+              keyboardType="numeric"
+              maxLength={10}
+            />
+          </View>
+
+          {/* Location */}
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              Location <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter location"
+              placeholderTextColor={COLORS.textSecondary}
+              value={location}
+              onChangeText={setLocation}
+              maxLength={100}
+            />
+          </View>
+
+          {/* Bottom Spacer */}
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+
+        {/* Participate Button */}
+        <View style={styles.bottomActions}>
+          <TouchableOpacity
+            style={[
+              styles.participateButton,
+              !isFormValid && styles.participateButtonDisabled,
+            ]}
+            onPress={handleParticipate}
+            disabled={!isFormValid}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.participateButtonText}>Participate</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -323,13 +250,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16,
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
@@ -341,30 +272,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? 20 : 22,
     fontWeight: 'bold',
     color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 26 : 28,
   },
   headerSpacer: {
     width: 40,
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 100,
+    padding: Platform.OS === 'android' ? 22 : 20,
+    paddingBottom: Platform.OS === 'android' ? 110 : 100,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'android' ? 24 : 20,
     backgroundColor: COLORS.white,
-    borderRadius: 25,
-    padding: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 20,
+    padding: Platform.OS === 'android' ? 20 : 18,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: COLORS.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3,
+    }),
   },
   label: {
     fontSize: 16,
@@ -375,85 +316,19 @@ const styles = StyleSheet.create({
   required: {
     color: COLORS.error,
   },
-  hintText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
   input: {
     backgroundColor: COLORS.background,
     borderWidth: 2,
     borderColor: COLORS.border,
-    borderRadius: 20,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'android' ? 14 : 12,
     fontSize: 15,
     color: COLORS.navy,
   },
   textArea: {
     minHeight: 100,
     paddingTop: 12,
-  },
-  sliderContainer: {
-    marginTop: 8,
-  },
-  sliderValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  imagePreviewContainer: {
-    position: 'relative',
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  imagePreview: {
-    width: '100%',
-    height: 200,
-    borderRadius: 20,
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 4,
-  },
-  uploadImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primaryBg,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 20,
-    paddingVertical: 20,
-    gap: 8,
-    marginTop: 8,
-  },
-  uploadImageText: {
-    fontSize: 15,
-    color: COLORS.primary,
-    fontWeight: '600',
   },
   bottomSpacer: {
     height: 20,
@@ -465,7 +340,7 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: COLORS.white,
     padding: 20,
-    paddingBottom: 30,
+    paddingBottom: Platform.OS === 'android' ? 30 : 28,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
     shadowColor: '#000',
@@ -474,23 +349,24 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 10,
   },
-  submitButton: {
+  participateButton: {
     backgroundColor: COLORS.primary,
     borderRadius: 25,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 6,
   },
-  submitButtonDisabled: {
+  participateButtonDisabled: {
     backgroundColor: COLORS.border,
     shadowOpacity: 0,
+    elevation: 0,
   },
-  submitButtonText: {
+  participateButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.white,

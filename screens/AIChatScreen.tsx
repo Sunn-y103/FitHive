@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
   ActivityIndicator,
   Animated,
 } from 'react-native';
@@ -162,6 +163,9 @@ const AIChatScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -284,19 +288,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
     backgroundColor: COLORS.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   backButton: {
     width: 40,

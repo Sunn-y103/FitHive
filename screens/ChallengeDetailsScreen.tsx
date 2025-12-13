@@ -12,6 +12,8 @@ import {
   Animated,
   Share,
   Alert,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -200,6 +202,9 @@ const ChallengeDetailsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       {/* Header with back button */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -435,13 +440,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
@@ -453,9 +462,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? 17 : 18, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 22 : 24,
   },
   headerSpacer: {
     width: 40,
@@ -464,7 +474,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120, // Space for bottom buttons
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 130 : 120, // More bottom padding on Android
   },
   bannerContainer: {
     width: SCREEN_WIDTH,

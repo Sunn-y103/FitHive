@@ -9,6 +9,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -260,6 +262,9 @@ const BurnedCaloriesScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -402,13 +407,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
@@ -420,9 +429,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   headerSpacer: {
     width: 40,
@@ -431,8 +441,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: Platform.OS === 'android' ? 22 : 20, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   loadingContainer: {
     flex: 1,
@@ -482,19 +492,25 @@ const styles = StyleSheet.create({
   totalBurnedContainer: {
     backgroundColor: COLORS.white,
     borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
+    padding: Platform.OS === 'android' ? 26 : 24, // More padding on Android
+    marginBottom: Platform.OS === 'android' ? 28 : 24, // More spacing on Android
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
     borderWidth: 1,
     borderColor: COLORS.borderLight,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 5, // Increased for better visibility
+    }),
   },
   totalBurnedTitle: {
     fontSize: 16,
@@ -516,16 +532,22 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: COLORS.white,
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: Platform.OS === 'android' ? 22 : 20, // More padding on Android
+    marginBottom: Platform.OS === 'android' ? 24 : 20, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4, // Increased for better visibility
+    }),
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -533,10 +555,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.textPrimary,
     marginLeft: 12,
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   inputGroup: {
     marginBottom: 16,

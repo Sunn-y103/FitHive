@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface MissionCardProps {
@@ -35,25 +35,32 @@ const MissionCard: React.FC<MissionCardProps> = ({ completed, total }) => {
 const styles = StyleSheet.create({
   container: {
     borderRadius: 25,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#A992F6',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    padding: Platform.OS === 'android' ? 22 : 20, // Slightly more padding on Android
+    marginBottom: Platform.OS === 'android' ? 24 : 20, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#A992F6',
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 10, // Increased for better visibility on Android
+    }),
   },
   content: {
     width: '100%',
   },
   title: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? 17 : 18, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#FFFFFF',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 18 : 16, // More spacing on Android
+    lineHeight: Platform.OS === 'android' ? 22 : 24,
   },
   progressContainer: {
     flexDirection: 'row',
@@ -80,14 +87,20 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4, // Increased for better visibility
+    }),
   },
   progressText: {
     fontSize: 16,

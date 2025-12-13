@@ -17,8 +17,8 @@ const BottomTabs: React.FC = () => {
 
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Fitness') {
-            iconName = focused ? 'checkbox' : 'checkbox-outline';
+          } else if (route.name === 'Rewards') {
+            iconName = focused ? 'gift' : 'gift-outline';
           } else if (route.name === 'Community') {
             iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'User') {
@@ -55,7 +55,7 @@ const BottomTabs: React.FC = () => {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Fitness" component={RewardsScreen} />
+      <Tab.Screen name="Rewards" component={RewardsScreen} />
       <Tab.Screen name="Community" component={CommunityScreen} />
       <Tab.Screen name="User" component={ProfileScreen} />
     </Tab.Navigator>

@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
   ScrollView,
   Alert,
   ActivityIndicator,
@@ -135,6 +136,9 @@ const OnboardingScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -272,6 +276,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   keyboardView: {
     flex: 1,
@@ -279,22 +287,23 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 44 : 40, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 44 : 40, // More padding on Android
   },
   content: {
     width: '100%',
   },
   header: {
-    marginBottom: 40,
+    marginBottom: Platform.OS === 'android' ? 44 : 40, // More spacing on Android
     alignItems: 'center',
   },
   title: {
-    fontSize: 32,
+    fontSize: Platform.OS === 'android' ? 30 : 32, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,
     marginBottom: 8,
     textAlign: 'center',
+    lineHeight: Platform.OS === 'android' ? 36 : 38,
   },
   subtitle: {
     fontSize: 16,

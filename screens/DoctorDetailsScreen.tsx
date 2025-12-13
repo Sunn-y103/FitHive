@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -86,6 +88,9 @@ const DoctorDetailsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -216,20 +221,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'android' ? 18 : 16, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 22 : 20, // More padding on Android
   },
   backButton: {
     width: 40,
@@ -238,16 +248,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4, // Increased for better visibility
+    }),
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   placeholder: {
     width: 40,

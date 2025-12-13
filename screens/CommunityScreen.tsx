@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   ActivityIndicator,
   FlatList,
   Animated,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,8 +24,9 @@ import * as ImagePicker from 'expo-image-picker';
 // import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 import { useChallenges } from '../contexts/ChallengeContext';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { getAndClearPendingChallenge, ChallengeData } from '../utils/challengeStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -74,12 +77,7 @@ const COLORS = {
 };
 
 // Challenge Type for the Challenges area
-interface ChallengeData {
-  id: string;
-  title: string;
-  description: string;
-  createdAt: string;
-}
+// ChallengeData is imported from challengeStore (see imports above)
 
 // Default mock challenges (fallback if context is empty)
 const DEFAULT_CHALLENGES = [
@@ -313,6 +311,43 @@ const ChallengeDataCard: React.FC<{
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  // If challenge has an image, render it like featured challenges
+  if (challenge.image) {
+    return (
+      <TouchableOpacity
+        style={[
+          styles.challengeCard,
+          isSelected && styles.challengeDataCardSelected,
+        ]}
+        onPress={onPress}
+        activeOpacity={0.8}
+        accessibilityLabel={`${challenge.title}, created ${formatDate(challenge.createdAt)}`}
+      >
+        <Image
+          source={{ uri: challenge.image }}
+          style={styles.challengeImage}
+          resizeMode="cover"
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(30, 58, 95, 0.85)']}
+          style={styles.challengeOverlay}
+        />
+        <View style={styles.challengeContent}>
+          <View>
+            <Text style={styles.challengeTitle}>{challenge.title}</Text>
+            <Text style={styles.challengeDate}>{formatDate(challenge.createdAt)}</Text>
+          </View>
+          {challenge.numberOfPeople && challenge.numberOfPeople > 0 && (
+            <Text style={styles.challengeParticipants}>
+              {challenge.numberOfPeople} participants
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  // Fallback to original card style if no image
   return (
     <TouchableOpacity
       style={[
@@ -356,9 +391,32 @@ const CommunityScreen: React.FC = () => {
   // Single source of truth for user-created challenges
   const [challengesData, setChallengesData] = useState<ChallengeData[]>([]);
   
-  // State for challenge details modal
+  // Listen for new challenge from CreateChallengeScreen when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const newChallenge = getAndClearPendingChallenge();
+      if (newChallenge) {
+        // Add new challenge to the top of the list
+        setChallengesData(prev => {
+          // Check if challenge already exists (prevent duplicates)
+          const exists = prev.some(c => c.id === newChallenge.id);
+          if (exists) {
+            return prev;
+          }
+          // Prepend new challenge to array (appears at top)
+          return [newChallenge, ...prev];
+        });
+      }
+    }, [])
+  );
+  
+  // State for challenge details bottom drawer
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeData | null>(null);
-  const [showChallengeDetailsModal, setShowChallengeDetailsModal] = useState(false);
+  const [selectedChallengeImage, setSelectedChallengeImage] = useState<string | null>(null);
+  const [selectedChallengeParticipants, setSelectedChallengeParticipants] = useState<number>(0);
+  const [selectedChallengeLocation, setSelectedChallengeLocation] = useState<string>('');
+  const [showChallengeDetailsDrawer, setShowChallengeDetailsDrawer] = useState(false);
+  const challengeDrawerAnimation = useRef(new Animated.Value(0)).current;
   
   // State for create challenge form
   const [showCreateChallengeModal, setShowCreateChallengeModal] = useState(false);
@@ -396,12 +454,23 @@ const CommunityScreen: React.FC = () => {
   
   // Handle challenge card tap (for user-created challenges)
   const handleChallengeCardPress = (challenge: ChallengeData) => {
+    // User-created challenge - show image if available
     setSelectedChallenge(challenge);
-    setShowChallengeDetailsModal(true);
+    setSelectedChallengeImage(challenge.image || null); // Show image if available
+    setSelectedChallengeParticipants(challenge.numberOfPeople || 0);
+    setSelectedChallengeLocation(challenge.location || 'Not specified');
+    setShowChallengeDetailsDrawer(true);
+    // Animate drawer slide-up
+    Animated.spring(challengeDrawerAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 7,
+    }).start();
   };
   
   // Handle legacy/featured challenge card tap
-  // Convert legacy challenge format to ChallengeData for modal display
+  // Convert legacy challenge format to ChallengeData for drawer display
   const handleLegacyChallengePress = (challenge: { id: string; title: string; dateRange?: string; time?: string; participants: number; image: string | null }) => {
     // Convert legacy challenge to ChallengeData format
     const challengeData: ChallengeData = {
@@ -412,7 +481,17 @@ const CommunityScreen: React.FC = () => {
     };
     
     setSelectedChallenge(challengeData);
-    setShowChallengeDetailsModal(true);
+    setSelectedChallengeImage(challenge.image); // Show image for featured challenges
+    setSelectedChallengeParticipants(challenge.participants);
+    setSelectedChallengeLocation('Not specified'); // Default location
+    setShowChallengeDetailsDrawer(true);
+    // Animate drawer slide-up
+    Animated.spring(challengeDrawerAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 7,
+    }).start();
   };
   
   // Combine context challenges with default challenges (for demo)
@@ -1123,6 +1202,137 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
     </View>
   );
 
+  const renderChallengeDetailsDrawer = () => {
+    if (!selectedChallenge) return null;
+
+    const screenHeight = Dimensions.get('window').height;
+    const drawerHeight = screenHeight * 0.7; // 70% of screen height
+
+    const slideUp = challengeDrawerAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [drawerHeight, 0],
+    });
+
+    const backdropOpacity = challengeDrawerAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 0.5],
+    });
+
+    const closeDrawer = () => {
+      Animated.timing(challengeDrawerAnimation, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowChallengeDetailsDrawer(false);
+        setSelectedChallenge(null);
+        setSelectedChallengeImage(null);
+        setSelectedChallengeParticipants(0);
+        setSelectedChallengeLocation('');
+      });
+    };
+
+    return (
+      <Modal
+        visible={showChallengeDetailsDrawer}
+        transparent
+        animationType="none"
+        onRequestClose={closeDrawer}
+      >
+        <TouchableOpacity
+          style={styles.challengeDrawerBackdrop}
+          activeOpacity={1}
+          onPress={closeDrawer}
+        >
+          <Animated.View
+            style={[
+              styles.challengeDrawerBackdropOverlay,
+              { opacity: backdropOpacity },
+            ]}
+          />
+        </TouchableOpacity>
+
+        <Animated.View
+          style={[
+            styles.challengeDrawerContainer,
+            {
+              height: drawerHeight,
+              transform: [{ translateY: slideUp }],
+            },
+          ]}
+        >
+          <View style={styles.challengeDrawerHeader}>
+            <Text style={styles.challengeDrawerTitle}>Challenge Details</Text>
+            <TouchableOpacity
+              onPress={closeDrawer}
+              style={styles.challengeDrawerCloseButton}
+            >
+              <Ionicons name="close" size={24} color={COLORS.navy} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.challengeDrawerContent}
+            contentContainerStyle={styles.challengeDrawerScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Challenge Image - Only for Featured Challenges */}
+            {selectedChallengeImage && (
+              <View style={styles.challengeDrawerImageContainer}>
+                <Image
+                  source={{ uri: selectedChallengeImage }}
+                  style={styles.challengeDrawerImage}
+                  resizeMode="cover"
+                />
+              </View>
+            )}
+
+            {/* Challenge Title */}
+            <Text style={styles.challengeDrawerTitleText}>
+              {selectedChallenge.title}
+            </Text>
+
+            {/* Challenge Description */}
+            <Text style={styles.challengeDrawerDescription}>
+              {selectedChallenge.description}
+            </Text>
+
+            {/* Challenge Details Section */}
+            <View style={styles.challengeDrawerDetailsSection}>
+              {/* Number of People */}
+              <View style={styles.challengeDrawerDetailItem}>
+                <View style={styles.challengeDrawerDetailIcon}>
+                  <Ionicons name="people" size={20} color={COLORS.primary} />
+                </View>
+                <View style={styles.challengeDrawerDetailContent}>
+                  <Text style={styles.challengeDrawerDetailLabel}>Participants</Text>
+                  <Text style={styles.challengeDrawerDetailValue}>
+                    {selectedChallengeParticipants > 0 
+                      ? `${selectedChallengeParticipants} people` 
+                      : 'Not specified'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Location */}
+              <View style={styles.challengeDrawerDetailItem}>
+                <View style={styles.challengeDrawerDetailIcon}>
+                  <Ionicons name="location" size={20} color={COLORS.primary} />
+                </View>
+                <View style={styles.challengeDrawerDetailContent}>
+                  <Text style={styles.challengeDrawerDetailLabel}>Location</Text>
+                  <Text style={styles.challengeDrawerDetailValue}>
+                    {selectedChallengeLocation || 'Not specified'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </Modal>
+    );
+  };
+
   const renderChallenges = () => (
     <View style={styles.challengesContainer}>
       {/* Challenges Header */}
@@ -1135,7 +1345,7 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
         </View>
         <TouchableOpacity
           style={styles.createChallengeButton}
-          onPress={() => setShowCreateChallengeModal(true)}
+          onPress={() => navigation.navigate('CreateChallenge')}
           accessibilityLabel="Create new challenge"
         >
           <Ionicons name="add-circle" size={20} color={COLORS.white} />
@@ -1180,7 +1390,7 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
             </Text>
             <TouchableOpacity
               style={styles.emptyStateButton}
-              onPress={() => setShowCreateChallengeModal(true)}
+              onPress={() => navigation.navigate('CreateChallenge')}
             >
               <Text style={styles.emptyStateButtonText}>Create Challenge</Text>
             </TouchableOpacity>
@@ -1192,6 +1402,9 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Community</Text>
@@ -1497,54 +1710,8 @@ const uploadImageToStorage = async (imageUri: string): Promise<string | null> =>
         </View>
       </Modal>
 
-      {/* Challenge Details Modal */}
-      <Modal
-        visible={showChallengeDetailsModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          setShowChallengeDetailsModal(false);
-          setSelectedChallenge(null);
-        }}
-      >
-        <View style={styles.challengeDetailsModalOverlay}>
-          <View style={styles.challengeDetailsModalContent}>
-            <View style={styles.challengeDetailsModalHeader}>
-              <Text style={styles.challengeDetailsModalTitle}>Challenge Details</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowChallengeDetailsModal(false);
-                  setSelectedChallenge(null);
-                }}
-                accessibilityLabel="Close challenge details"
-              >
-                <Ionicons name="close" size={24} color={COLORS.navy} />
-              </TouchableOpacity>
-            </View>
-
-            {selectedChallenge && (
-              <ScrollView style={styles.challengeDetailsContent}>
-                <Text style={styles.challengeDetailsTitle}>
-                  {selectedChallenge.title}
-                </Text>
-                <Text style={styles.challengeDetailsDate}>
-                  Created: {new Date(selectedChallenge.createdAt).toLocaleDateString('en-US', {
-                    month: 'long',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-                <View style={styles.challengeDetailsDivider} />
-                <Text style={styles.challengeDetailsDescription}>
-                  {selectedChallenge.description}
-                </Text>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Challenge Details Bottom Drawer */}
+      {renderChallengeDetailsDrawer()}
 
       {/* Create Challenge Modal */}
       <Modal
@@ -1620,6 +1787,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background, // #F7F7FA - same as all other screens
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   
   // ============================================
@@ -1630,13 +1801,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: Platform.OS === 'android' ? 18 : 16, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 20 : 16, // More padding on Android
   },
   headerTitle: {
-    fontSize: 28,                        // Same as ProfileScreen headerTitle
+    fontSize: Platform.OS === 'android' ? 26 : 28, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,                  // #1E3A5F
+    lineHeight: Platform.OS === 'android' ? 32 : 34,
   },
   notificationButton: {
     width: 44,                           // Same as ProfileScreen settingsButton
@@ -1645,11 +1817,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,                 // Same shadow as ProfileScreen
-    shadowRadius: 6,
-    elevation: 2,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,                 // Same shadow as ProfileScreen
+      shadowRadius: 6,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   
   // ============================================
@@ -1691,8 +1869,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,               // Same as HomeScreen, ProfileScreen
-    paddingTop: 16,
-    paddingBottom: 100,
+    paddingTop: Platform.OS === 'android' ? 16 : 16, // Consistent top padding
+    paddingBottom: Platform.OS === 'android' ? 120 : 100, // More bottom padding on Android for floating button
   },
   
   // ============================================
@@ -1735,12 +1913,18 @@ const styles = StyleSheet.create({
   postCard: {
     backgroundColor: COLORS.white,
     borderRadius: 25,                    // Same as MissionCard, ScoreCard
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,                  // Same as ScoreCard
-    shadowRadius: 12,
-    elevation: 5,
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,                  // Same as ScoreCard
+      shadowRadius: 12,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 6, // Increased for better visibility
+    }),
   },
   postHeader: {
     flexDirection: 'row',
@@ -2282,56 +2466,122 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   
-  // Challenge Details Modal
-  challengeDetailsModalOverlay: {
+  // Challenge Details Bottom Drawer
+  challengeDrawerBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  challengeDetailsModalContent: {
+  challengeDrawerBackdropOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  challengeDrawerContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: COLORS.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '80%',
-    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  challengeDetailsModalHeader: {
+  challengeDrawerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 16,
+    padding: Platform.OS === 'android' ? 22 : 20,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
   },
-  challengeDetailsModalTitle: {
-    fontSize: 20,
+  challengeDrawerTitle: {
+    fontSize: Platform.OS === 'android' ? 20 : 22,
     fontWeight: 'bold',
     color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 26 : 28,
   },
-  challengeDetailsContent: {
-    maxHeight: 500,
+  challengeDrawerCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  challengeDetailsTitle: {
-    fontSize: 22,
+  challengeDrawerContent: {
+    flex: 1,
+  },
+  challengeDrawerScrollContent: {
+    padding: Platform.OS === 'android' ? 24 : 20,
+    paddingBottom: Platform.OS === 'android' ? 40 : 36,
+  },
+  challengeDrawerImageContainer: {
+    width: '100%',
+    height: Platform.OS === 'android' ? 200 : 180,
+    marginBottom: Platform.OS === 'android' ? 24 : 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: COLORS.background,
+  },
+  challengeDrawerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  challengeDrawerTitleText: {
+    fontSize: Platform.OS === 'android' ? 26 : 24,
     fontWeight: 'bold',
     color: COLORS.navy,
-    marginBottom: 12,
+    marginBottom: Platform.OS === 'android' ? 16 : 14,
+    lineHeight: Platform.OS === 'android' ? 32 : 30,
   },
-  challengeDetailsDate: {
-    fontSize: 14,
+  challengeDrawerDescription: {
+    fontSize: Platform.OS === 'android' ? 16 : 15,
     color: COLORS.textSecondary,
-    marginBottom: 16,
+    lineHeight: Platform.OS === 'android' ? 24 : 22,
+    marginBottom: Platform.OS === 'android' ? 28 : 24,
   },
-  challengeDetailsDivider: {
-    height: 1,
-    backgroundColor: COLORS.borderLight,
-    marginBottom: 16,
+  challengeDrawerDetailsSection: {
+    marginTop: Platform.OS === 'android' ? 8 : 4,
   },
-  challengeDetailsDescription: {
-    fontSize: 16,
+  challengeDrawerDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: Platform.OS === 'android' ? 20 : 18,
+    paddingBottom: Platform.OS === 'android' ? 20 : 18,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  challengeDrawerDetailIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Platform.OS === 'android' ? 16 : 14,
+  },
+  challengeDrawerDetailContent: {
+    flex: 1,
+  },
+  challengeDrawerDetailLabel: {
+    fontSize: Platform.OS === 'android' ? 13 : 12,
     color: COLORS.textSecondary,
-    lineHeight: 24,
+    marginBottom: Platform.OS === 'android' ? 6 : 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  challengeDrawerDetailValue: {
+    fontSize: Platform.OS === 'android' ? 16 : 15,
+    fontWeight: '600',
+    color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 22 : 20,
   },
   challengeDescriptionInput: {
     minHeight: 120,

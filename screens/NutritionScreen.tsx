@@ -9,6 +9,8 @@ import {
   TextInput,
   Dimensions,
   Alert,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -217,6 +219,9 @@ const NutritionScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -396,13 +401,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: Platform.OS === 'android' ? 18 : 16, // More padding on Android
     paddingBottom: 16,
   },
   backButton: {
@@ -412,9 +421,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   headerSpacer: {
     width: 40,
@@ -424,7 +434,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   toastContainer: {
     backgroundColor: COLORS.success,
@@ -455,19 +466,26 @@ const styles = StyleSheet.create({
   inputsCard: {
     backgroundColor: COLORS.white,
     borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: Platform.OS === 'android' ? 22 : 20, // More padding on Android
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? 17 : 18, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.navy,
-    marginBottom: 20,
+    marginBottom: Platform.OS === 'android' ? 24 : 20, // More spacing on Android
+    lineHeight: Platform.OS === 'android' ? 22 : 24,
   },
   inputRow: {
     marginBottom: 20,

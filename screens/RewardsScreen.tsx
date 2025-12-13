@@ -27,12 +27,14 @@ import {
   Linking,
   Image,
   Dimensions,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { checkAndGenerateReward, HealthSummary } from '../utils/rewardFlow';
-import { loadJSON, fitcoinsKey, milestonesKey, todayKey, rewardStorageKey, getUserKey } from '../utils/storageUtils';
+import { loadJSON, saveJSON, fitcoinsKey, milestonesKey, todayKey, rewardStorageKey, getUserKey } from '../utils/storageUtils';
 import { useHealthData } from '../contexts/HealthDataContext';
 import { OPENAI_API_KEY } from '@env';
 import { useAuth } from '../contexts/AuthContext';
@@ -75,7 +77,7 @@ interface RewardsScreenProps {
 const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { waterValue, burnedValue, nutritionValue, sleepValue } = useHealthData();
+  const { waterValue, burnedValue, nutritionValue, sleepValue, totalBurnedCalories } = useHealthData();
   const [canClaimReward, setCanClaimReward] = useState<boolean>(false);
   const [rewardState, setRewardState] = useState<RewardStateForToday>({
     completedCount: 0,
@@ -102,6 +104,11 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const [offerModalVisible, setOfferModalVisible] = useState<boolean>(false);
   const offerModalAnimation = useRef(new Animated.Value(0)).current;
+  
+  // FitCoins Redeemable Offers state
+  const [selectedRedeemableOffer, setSelectedRedeemableOffer] = useState<any>(null);
+  const [redeemableOfferModalVisible, setRedeemableOfferModalVisible] = useState<boolean>(false);
+  const redeemableOfferModalAnimation = useRef(new Animated.Value(0)).current;
   
   // Gift Drawer state
   const [giftDrawerVisible, setGiftDrawerVisible] = useState<boolean>(false);
@@ -135,9 +142,11 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
     try {
       // Calculate mission status from current health values (real-time)
       // This is the same calculation used in HomeScreen, ensuring consistency
+      // Use totalBurnedCalories (treadmill + cycling) instead of burnedValue (average)
+      // totalBurnedCalories is always a number (defaults to 0), so pass null if 0 for mission check
       const calculatedStatus = calculateMissionStatus(
         waterValue,
-        burnedValue,
+        totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
         nutritionValue,
         sleepValue
       );
@@ -153,7 +162,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
         user.id,
         calculatedStatus,
         waterValue,
-        burnedValue,
+        totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
         nutritionValue,
         sleepValue
       );
@@ -177,13 +186,19 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
             nutrition: nutritionValue,
             sleep: sleepValue,
           },
+          goals: {
+            water: '3L',
+            burned: '300 kcal',
+            nutrition: '2200 kcal',
+            sleep: '7 hours',
+          },
         });
       }
     } catch (error) {
       console.error('Error updating mission status:', error);
       setCanClaimReward(false);
     }
-  }, [user?.id, waterValue, burnedValue, nutritionValue, sleepValue]);
+  }, [user?.id, waterValue, totalBurnedCalories, nutritionValue, sleepValue]);
 
   // ========================================================================
   // LOAD DATA FROM ASYNCSTORAGE
@@ -389,13 +404,22 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
   // 
   // IMPORTANT: Reward is only available when user completes 3+ daily missions
   const handleClaimReward = async () => {
-    // First, check if user can claim reward (3+ missions completed)
-    if (!canClaimReward) {
-      Alert.alert(
-        'Reward Locked',
-        'Complete at least 3 daily missions to claim your reward.\n\nGo to Home to check your mission progress.',
-        [{ text: 'OK' }]
-      );
+    // First, check if user can claim reward (3+ missions completed and not already claimed)
+    // Use rewardState.canClaim which is the most accurate (unlocked && !claimedToday)
+    if (!rewardState.canClaim) {
+      if (!rewardState.unlocked) {
+        Alert.alert(
+          'Reward Locked',
+          `Complete at least 3 daily missions to claim your reward.\n\nCurrent progress: ${rewardState.completedCount}/4 missions completed.\n\nGo to Home to check your mission progress.`,
+          [{ text: 'OK' }]
+        );
+      } else if (rewardState.claimedToday) {
+        Alert.alert(
+          'Reward Already Claimed',
+          'You have already claimed your reward for today. Come back tomorrow for a new reward!',
+          [{ text: 'OK' }]
+        );
+      }
       return;
     }
 
@@ -403,26 +427,53 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
 
     try {
       // Recalculate mission status from current health values (most up-to-date)
-      let canClaim = false;
       if (user?.id) {
+        // Use totalBurnedCalories (treadmill + cycling) instead of burnedValue (average)
+        // This matches HomeScreen's mission calculation logic
         const calculatedStatus = calculateMissionStatus(
           waterValue,
-          burnedValue,
+          totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
           nutritionValue,
           sleepValue
         );
-        canClaim = calculatedStatus.canClaimReward;
         
         // Save the latest status
         await saveDailyMissionStatus(user.id, calculatedStatus);
-        setCanClaimReward(canClaim);
-      }
-      
-      // Double-check after recalculation
-      if (!canClaim) {
+        setCanClaimReward(calculatedStatus.canClaimReward);
+        
+        // Update reward state to get the latest claim status
+        const updatedRewardState = await getRewardStateForToday(
+          user.id,
+          calculatedStatus,
+          waterValue,
+          totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
+          nutritionValue,
+          sleepValue
+        );
+        setRewardState(updatedRewardState);
+        
+        // Double-check after recalculation - use rewardState.canClaim for accuracy
+        if (!updatedRewardState.canClaim) {
+          if (!updatedRewardState.unlocked) {
+            Alert.alert(
+              'Reward Locked',
+              `Complete at least 3 daily missions to claim your reward.\n\nCurrent progress: ${calculatedStatus.completedCount}/4 missions completed.`,
+              [{ text: 'OK' }]
+            );
+          } else if (updatedRewardState.claimedToday) {
+            Alert.alert(
+              'Reward Already Claimed',
+              'You have already claimed your reward for today. Come back tomorrow for a new reward!',
+              [{ text: 'OK' }]
+            );
+          }
+          setLoading(false);
+          return;
+        }
+      } else {
         Alert.alert(
-          'Reward Locked',
-          `Complete at least 3 daily missions to claim your reward.\n\nCurrent progress: ${calculateMissionStatus(waterValue, burnedValue, nutritionValue, sleepValue).completedCount}/4 missions completed.`,
+          'Error',
+          'User not authenticated. Please log in again.',
           [{ text: 'OK' }]
         );
         setLoading(false);
@@ -507,9 +558,11 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
       
       // Update reward state to reflect that it's been claimed
       if (user?.id) {
+        // Use totalBurnedCalories (treadmill + cycling) instead of burnedValue (average)
+        // This matches HomeScreen's mission calculation logic
         const calculatedStatus = calculateMissionStatus(
           waterValue,
-          burnedValue,
+          totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
           nutritionValue,
           sleepValue
         );
@@ -517,7 +570,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
           user.id,
           calculatedStatus,
           waterValue,
-          burnedValue,
+          totalBurnedCalories > 0 ? totalBurnedCalories : null, // Use totalBurnedCalories instead of burnedValue
           nutritionValue,
           sleepValue
         );
@@ -764,7 +817,17 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
       coupon: 'NIKE-FIT10',
       link: 'https://www.nike.com',
       description: 'Premium lightweight shoes for daily running. Get 10% off on your next purchase with this exclusive FitHive coupon.',
-      image: null, // Placeholder - replace with require('../assets/rewards/nikeShoes.png') when image is available
+      image: require('../assets/images/nike2.png'), // Placeholder - replace with require('../assets/rewards/nikeShoes.png') when image is available
+    },
+   
+    {
+      id: 'muesli',
+      title: 'Pintola Muesli',
+      subtitle: 'Protein-Packed Crunch',
+      coupon: 'PINTOLA-FIT20',
+      link: 'https://pintola.in',
+      description: 'Delicious muesli blend with nuts and protein. Get 20% off on this healthy breakfast option.',
+      image: require('../assets/images/pintola.jpg'), // Placeholder - replace with require('../assets/rewards/muesli.png') when image is available
     },
     {
       id: 'oats',
@@ -773,16 +836,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
       coupon: 'OATS-FIT15',
       link: 'https://myfitness.com',
       description: 'High-fiber oats to fuel your mornings. Enjoy 15% discount on premium quality oats.',
-      image: null, // Placeholder - replace with require('../assets/rewards/oats.png') when image is available
-    },
-    {
-      id: 'muesli',
-      title: 'Pintola Muesli',
-      subtitle: 'Protein-Packed Crunch',
-      coupon: 'PINTOLA-FIT20',
-      link: 'https://pintola.in',
-      description: 'Delicious muesli blend with nuts and protein. Get 20% off on this healthy breakfast option.',
-      image: null, // Placeholder - replace with require('../assets/rewards/muesli.png') when image is available
+      image: require('../assets/images/myp-removebg-preview.png'), // Placeholder - replace with require('../assets/rewards/oats.png') when image is available
     },
     {
       id: 'energy',
@@ -791,7 +845,47 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
       coupon: 'ENERGY-FIT12',
       link: 'https://example.com/energy',
       description: 'Natural energy drink with no artificial additives. Perfect for pre-workout or mid-day boost. 12% discount available.',
-      image: null, // Placeholder - replace with require('../assets/rewards/energy.png') when image is available
+      image: require('../assets/images/health.jpg'), // Placeholder - replace with require('../assets/rewards/energy.png') when image is available
+    },
+  ];
+
+  // FitCoins Redeemable Offers Data
+  const fitcoinsRedeemableOffers = [
+    {
+      id: 'wellcore-gym',
+      title: 'WellCore Gym Membership',
+      subtitle: 'Membership Discount Offer',
+      description: 'Get exclusive access to premium gym facilities with our special membership discount. Perfect for your fitness journey!',
+      requiredFitCoins: 150,
+      link: 'https://wavesgym.com',
+      image: require('../assets/images/gym2.jpg'), // Placeholder - replace with actual image
+    },
+    {
+      id: 'muscleblaze-protein',
+      title: 'MuscleBlaze Protein Powder',
+      subtitle: 'Discount on Protein Powder',
+      description: 'High-quality protein powder to fuel your workouts and recovery. Get a special discount when you redeem with FitCoins.',
+      requiredFitCoins: 10,
+      link: 'https://muscleblaze.com',
+      image: require('../assets/images/mbpowder.avif'), // Placeholder - replace with actual image
+    },
+    {
+      id: 'puma-combo',
+      title: 'Puma T-Shirt + Shorts',
+      subtitle: 'Combo with Discount',
+      description: 'Complete your workout wardrobe with this stylish Puma combo. Comfortable and durable for all your fitness activities.',
+      requiredFitCoins: 100,
+      link: 'https://puma.com',
+      image: require('../assets/images/puma.jpg'), // Placeholder - replace with actual image
+    },
+    {
+      id: 'adidas-shoes',
+      title: 'Adidas Running Shoes',
+      subtitle: 'Discount on Running Shoes',
+      description: 'Premium running shoes designed for performance and comfort. Perfect for your daily runs and training sessions.',
+      requiredFitCoins: 180,
+      link: 'https://adidas.com',
+      image: require('../assets/images/ad-removebg-preview.png'), // Placeholder - replace with actual image
     },
   ];
 
@@ -827,7 +921,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
                   <Image
                     source={offer.image}
                     style={styles.offerCardImage}
-                    resizeMode="cover"
+                    resizeMode="contain"
                   />
                 ) : (
                   <View style={styles.offerCardImagePlaceholder}>
@@ -856,11 +950,317 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
     );
   };
 
+  const renderFitCoinsRedeemableOffers = () => {
+    return (
+      <View style={styles.fitcoinsRedeemableSection}>
+        <Text style={styles.sectionTitle}>FitCoins Redeemable Offers</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.offersScroll}
+        >
+          {fitcoinsRedeemableOffers.map((offer) => (
+            <TouchableOpacity
+              key={offer.id}
+              style={styles.redeemableOfferCard}
+              onPress={() => {
+                setSelectedRedeemableOffer(offer);
+                setRedeemableOfferModalVisible(true);
+                // Animate modal slide-up
+                Animated.spring(redeemableOfferModalAnimation, {
+                  toValue: 1,
+                  useNativeDriver: true,
+                  tension: 50,
+                  friction: 7,
+                }).start();
+              }}
+              activeOpacity={0.8}
+            >
+              {/* Product Image */}
+              <View style={styles.redeemableOfferCardImageContainer}>
+                {offer.image ? (
+                  <Image
+                    source={offer.image}
+                    style={styles.redeemableOfferCardImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.redeemableOfferCardImagePlaceholder}>
+                    <Ionicons
+                      name={offer.id === 'wellcore-gym' ? 'barbell' : offer.id === 'muscleblaze-protein' ? 'fitness' : offer.id === 'puma-combo' ? 'shirt' : 'walk'}
+                      size={50}
+                      color="#A992F6"
+                    />
+                  </View>
+                )}
+              </View>
+              
+              {/* FitCoins Badge */}
+              <View style={styles.redeemableOfferBadge}>
+                <Ionicons name="logo-bitcoin" size={14} color="#A992F6" />
+                <Text style={styles.redeemableOfferBadgeText}>Redeem with FitCoins</Text>
+              </View>
+              
+              {/* Card Content */}
+              <View style={styles.redeemableOfferCardContent}>
+                <Text style={styles.redeemableOfferCardTitle} numberOfLines={2}>
+                  {offer.title}
+                </Text>
+                <Text style={styles.redeemableOfferCardSubtitle} numberOfLines={1}>
+                  {offer.subtitle}
+                </Text>
+                <View style={styles.redeemableOfferCoinsContainer}>
+                  <Ionicons name="logo-bitcoin" size={16} color="#A992F6" />
+                  <Text style={styles.redeemableOfferCoinsText}>{offer.requiredFitCoins} FitCoins</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const handleRedeemWithFitCoins = async () => {
+    if (!selectedRedeemableOffer || !user?.id) return;
+
+    const requiredCoins = selectedRedeemableOffer.requiredFitCoins;
+    
+    if (fitcoinsBalance < requiredCoins) {
+      Alert.alert(
+        'Insufficient FitCoins',
+        `You need ${requiredCoins} FitCoins to redeem this offer. You currently have ${fitcoinsBalance} FitCoins.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Confirm redemption
+    Alert.alert(
+      'Confirm Redemption',
+      `Are you sure you want to redeem ${requiredCoins} FitCoins for ${selectedRedeemableOffer.title}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Redeem',
+          onPress: async () => {
+            try {
+              const newBalance = fitcoinsBalance - requiredCoins;
+              
+              // Save new balance to AsyncStorage
+              const userFitcoinsKey = getUserKey(fitcoinsKey, user.id);
+              await saveJSON(userFitcoinsKey, newBalance);
+              
+              // Update state
+              setFitcoinsBalance(newBalance);
+              setDisplayBalance(newBalance);
+              previousBalanceRef.current = newBalance;
+              
+              // Close modal
+              Animated.timing(redeemableOfferModalAnimation, {
+                toValue: 0,
+                duration: 250,
+                useNativeDriver: true,
+              }).start(() => {
+                setRedeemableOfferModalVisible(false);
+                setSelectedRedeemableOffer(null);
+              });
+              
+              Alert.alert(
+                'Redemption Successful!',
+                `You have successfully redeemed ${requiredCoins} FitCoins for ${selectedRedeemableOffer.title}. Your new balance is ${newBalance} FitCoins.`,
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              console.error('Error redeeming FitCoins:', error);
+              Alert.alert('Error', 'Failed to redeem FitCoins. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderRedeemableOfferModal = () => {
+    if (!selectedRedeemableOffer) return null;
+
+    const screenHeight = Dimensions.get('window').height;
+    const modalHeight = screenHeight * 0.75; // 75% of screen height
+
+    const slideUp = redeemableOfferModalAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [modalHeight, 0],
+    });
+
+    const backdropOpacity = redeemableOfferModalAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 0.5],
+    });
+
+    const hasEnoughCoins = fitcoinsBalance >= selectedRedeemableOffer.requiredFitCoins;
+
+    return (
+      <Modal
+        visible={redeemableOfferModalVisible}
+        transparent
+        animationType="none"
+        onRequestClose={() => {
+          Animated.timing(redeemableOfferModalAnimation, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }).start(() => {
+            setRedeemableOfferModalVisible(false);
+            setSelectedRedeemableOffer(null);
+          });
+        }}
+      >
+        <TouchableOpacity
+          style={styles.offerModalBackdrop}
+          activeOpacity={1}
+          onPress={() => {
+            Animated.timing(redeemableOfferModalAnimation, {
+              toValue: 0,
+              duration: 250,
+              useNativeDriver: true,
+            }).start(() => {
+              setRedeemableOfferModalVisible(false);
+              setSelectedRedeemableOffer(null);
+            });
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.offerModalBackdropOverlay,
+              { opacity: backdropOpacity },
+            ]}
+          />
+        </TouchableOpacity>
+
+        <Animated.View
+          style={[
+            styles.offerModalContainer,
+            {
+              height: modalHeight,
+              transform: [{ translateY: slideUp }],
+            },
+          ]}
+        >
+          <View style={styles.offerModalHeader}>
+            <Text style={styles.offerModalTitle}>Redeem with FitCoins</Text>
+            <TouchableOpacity
+              onPress={() => {
+                Animated.timing(redeemableOfferModalAnimation, {
+                  toValue: 0,
+                  duration: 250,
+                  useNativeDriver: true,
+                }).start(() => {
+                  setRedeemableOfferModalVisible(false);
+                  setSelectedRedeemableOffer(null);
+                });
+              }}
+              style={styles.offerModalCloseButton}
+            >
+              <Ionicons name="close" size={24} color="#1E3A5F" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.offerModalContent}
+            contentContainerStyle={styles.offerModalContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Product Image/Icon */}
+            <View style={styles.offerModalImageContainer}>
+              {selectedRedeemableOffer.image ? (
+                <Image
+                  source={selectedRedeemableOffer.image}
+                  style={styles.offerModalImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.offerModalImagePlaceholder}>
+                  <Ionicons
+                    name={selectedRedeemableOffer.id === 'wellcore-gym' ? 'barbell' : selectedRedeemableOffer.id === 'muscleblaze-protein' ? 'fitness' : selectedRedeemableOffer.id === 'puma-combo' ? 'shirt' : 'walk'}
+                    size={60}
+                    color="#A992F6"
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Product Title & Subtitle */}
+            <Text style={styles.offerModalProductTitle}>
+              {selectedRedeemableOffer.title}
+            </Text>
+            <Text style={styles.offerModalProductSubtitle}>
+              {selectedRedeemableOffer.subtitle}
+            </Text>
+
+            {/* Product Description */}
+            <Text style={styles.offerModalDescription}>
+              {selectedRedeemableOffer.description}
+            </Text>
+
+            {/* Required FitCoins */}
+            <View style={styles.redeemableOfferFitCoinsContainer}>
+              <View style={styles.redeemableOfferFitCoinsBox}>
+                <Ionicons name="logo-bitcoin" size={24} color="#A992F6" />
+                <View style={styles.redeemableOfferFitCoinsTextContainer}>
+                  <Text style={styles.redeemableOfferFitCoinsLabel}>Required FitCoins</Text>
+                  <Text style={styles.redeemableOfferFitCoinsValue}>
+                    {selectedRedeemableOffer.requiredFitCoins} FitCoins
+                  </Text>
+                </View>
+              </View>
+              {!hasEnoughCoins && (
+                <Text style={styles.redeemableOfferInsufficientText}>
+                  You need {selectedRedeemableOffer.requiredFitCoins - fitcoinsBalance} more FitCoins
+                </Text>
+              )}
+            </View>
+
+            {/* Redeem with FitCoins Button */}
+            <TouchableOpacity
+              style={[
+                styles.redeemableOfferRedeemButton,
+                !hasEnoughCoins && styles.redeemableOfferRedeemButtonDisabled,
+              ]}
+              onPress={handleRedeemWithFitCoins}
+              disabled={!hasEnoughCoins}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="logo-bitcoin" size={20} color="#FFFFFF" />
+              <Text style={styles.redeemableOfferRedeemButtonText}>
+                Redeem with FitCoins
+              </Text>
+            </TouchableOpacity>
+
+            {/* Buy on Website Button */}
+            <TouchableOpacity
+              style={styles.redeemableOfferBuyButton}
+              onPress={() => {
+                Linking.openURL(selectedRedeemableOffer.link).catch((err) => {
+                  console.error('Failed to open URL:', err);
+                  Alert.alert('Error', 'Could not open the website. Please try again later.');
+                });
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="globe-outline" size={20} color="#1E3A5F" />
+              <Text style={styles.redeemableOfferBuyButtonText}>Buy on Website</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </Animated.View>
+      </Modal>
+    );
+  };
+
   const renderOfferModal = () => {
     if (!selectedOffer) return null;
 
     const screenHeight = Dimensions.get('window').height;
-    const modalHeight = screenHeight * 0.55; // 55% of screen height
+    const modalHeight = screenHeight * 0.75; // 75% of screen height for better visibility
 
     const slideUp = offerModalAnimation.interpolate({
       inputRange: [0, 1],
@@ -940,6 +1340,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
 
           <ScrollView
             style={styles.offerModalContent}
+            contentContainerStyle={styles.offerModalContentContainer}
             showsVerticalScrollIndicator={false}
           >
             {/* Product Image/Icon */}
@@ -948,7 +1349,7 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
                 <Image
                   source={selectedOffer.image}
                   style={styles.offerModalImage}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               ) : (
                 <View style={styles.offerModalImagePlaceholder}>
@@ -1293,6 +1694,9 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
         {/* Reward Offers */}
         {renderRewardOffers()}
 
+        {/* FitCoins Redeemable Offers */}
+        {renderFitCoinsRedeemableOffers()}
+
         {/* Reward History */}
         {renderRewardHistory()}
 
@@ -1305,6 +1709,9 @@ const RewardsScreen: React.FC<RewardsScreenProps> = ({ onClaim }) => {
       
       {/* Offer Modal */}
       {renderOfferModal()}
+      
+      {/* FitCoins Redeemable Offer Modal */}
+      {renderRedeemableOfferModal()}
       
       {/* Gift Drawer */}
       {renderGiftDrawer()}
@@ -1320,26 +1727,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 16 : 20, // Slightly less top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   header: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'android' ? 28 : 24, // More spacing on Android
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: Platform.OS === 'android' ? 30 : 32, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
     flex: 1,
+    lineHeight: Platform.OS === 'android' ? 36 : 38,
   },
   headerGiftButton: {
     width: 48,
@@ -1498,25 +1910,37 @@ const styles = StyleSheet.create({
   offerCard: {
     width: 240,
     height: 260,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF', // White background
     borderRadius: 20,
     marginRight: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 5,
+    overflow: 'hidden', // Ensure card corners remain rounded and content doesn't overflow
+    borderWidth: Platform.OS === 'android' ? 1 : 1.5, // Subtle border for card separation
+    borderColor: '#B3B3F5', // Slightly darker purple border
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 5,
+    }),
   },
   offerCardImageContainer: {
     width: '100%',
-    height: 150, // ~58% of card height (150/260)
-    backgroundColor: '#F5F5F5',
-    overflow: 'hidden',
+    height: 150, // Fixed height for consistent card layout
+    backgroundColor: '#F5F5F5', // Light background for image container
+    overflow: 'hidden', // Prevent image overflow
+    justifyContent: 'center', // Center image vertically
+    alignItems: 'center', // Center image horizontally
+    padding: Platform.OS === 'android' ? 12 : 10, // Padding to ensure images fit within container
   },
   offerCardImage: {
     width: '100%',
     height: '100%',
+    // Images will be contained within the container with proper aspect ratio
   },
   offerCardImagePlaceholder: {
     width: '100%',
@@ -1592,19 +2016,27 @@ const styles = StyleSheet.create({
   },
   offerModalContent: {
     flex: 1,
-    padding: 20,
+  },
+  offerModalContentContainer: {
+    padding: Platform.OS === 'android' ? 24 : 20, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 32 : 28, // Extra bottom padding for button visibility
   },
   offerModalImageContainer: {
     width: '100%',
-    height: 180,
-    marginBottom: 20,
+    height: Platform.OS === 'android' ? 220 : 200, // Increased height for better image visibility
+    marginBottom: Platform.OS === 'android' ? 24 : 20, // More spacing on Android
     borderRadius: 16,
     overflow: 'hidden',
     alignSelf: 'center',
+    backgroundColor: '#F5F5F5', // Background for image container
+    justifyContent: 'center', // Center image vertically
+    alignItems: 'center', // Center image horizontally
+    padding: Platform.OS === 'android' ? 16 : 12, // Padding to ensure images fit within container
   },
   offerModalImage: {
     width: '100%',
     height: '100%',
+    // Image will be contained with proper aspect ratio
   },
   offerModalImagePlaceholder: {
     width: '100%',
@@ -1614,27 +2046,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   offerModalProductTitle: {
-    fontSize: 22,
+    fontSize: Platform.OS === 'android' ? 24 : 22, // Slightly larger on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'android' ? 12 : 8, // More spacing on Android
+    lineHeight: Platform.OS === 'android' ? 30 : 28,
   },
   offerModalProductSubtitle: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 15 : 14, // Slightly larger on Android
     color: '#6F6F7B',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
+    lineHeight: Platform.OS === 'android' ? 22 : 20,
   },
   offerModalDescription: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 15 : 14, // Slightly larger on Android
     color: '#1E3A5F',
-    lineHeight: 20,
-    marginBottom: 24,
+    lineHeight: Platform.OS === 'android' ? 22 : 20, // Better line height on Android
+    marginBottom: Platform.OS === 'android' ? 28 : 24, // More spacing on Android
     textAlign: 'center',
   },
   offerModalCouponContainer: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'android' ? 28 : 24, // More spacing on Android
   },
   offerModalCouponLabel: {
     fontSize: 14,
@@ -1668,15 +2102,219 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#A992F6',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
     paddingHorizontal: 24,
-    marginTop: 8,
+    marginTop: Platform.OS === 'android' ? 12 : 8, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#A992F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4, // Better visibility on Android
+    }),
   },
   offerModalVisitButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
     marginLeft: 8,
+  },
+  // FitCoins Redeemable Offers Section
+  fitcoinsRedeemableSection: {
+    marginBottom: Platform.OS === 'android' ? 36 : 32, // More spacing on Android
+  },
+  redeemableOfferCard: {
+    width: 260, // Slightly larger than standard offer cards
+    height: 300, // Taller to accommodate badge and coins info
+    backgroundColor: '#FFFFFF', // White background
+    borderRadius: 20,
+    marginRight: 20,
+    overflow: 'hidden', // Ensure card corners remain rounded
+    borderWidth: Platform.OS === 'android' ? 1 : 1.5, // Subtle border for card separation
+    borderColor: '#B3B3F5', // Slightly darker purple border
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 6, // Higher elevation for distinction
+    }),
+  },
+  redeemableOfferCardImageContainer: {
+    width: '100%',
+    height: 160, // Larger image area
+    backgroundColor: '#F5F5F5',
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Platform.OS === 'android' ? 12 : 10,
+  },
+  redeemableOfferCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  redeemableOfferCardImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  redeemableOfferBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0EDFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  redeemableOfferBadgeText: {
+    fontSize: Platform.OS === 'android' ? 11 : 10,
+    fontWeight: '600',
+    color: '#A992F6',
+    marginLeft: 4,
+  },
+  redeemableOfferCardContent: {
+    flex: 1,
+    padding: Platform.OS === 'android' ? 18 : 16,
+    justifyContent: 'space-between',
+  },
+  redeemableOfferCardTitle: {
+    fontSize: Platform.OS === 'android' ? 18 : 17,
+    fontWeight: 'bold',
+    color: '#1E3A5F',
+    marginBottom: 6,
+    lineHeight: Platform.OS === 'android' ? 24 : 22,
+  },
+  redeemableOfferCardSubtitle: {
+    fontSize: Platform.OS === 'android' ? 14 : 13,
+    color: '#6F6F7B',
+    marginBottom: Platform.OS === 'android' ? 12 : 10,
+    lineHeight: Platform.OS === 'android' ? 20 : 18,
+  },
+  redeemableOfferCoinsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0EDFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  redeemableOfferCoinsText: {
+    fontSize: Platform.OS === 'android' ? 15 : 14,
+    fontWeight: 'bold',
+    color: '#A992F6',
+    marginLeft: 6,
+  },
+  // FitCoins Redeemable Offer Modal Styles
+  redeemableOfferFitCoinsContainer: {
+    marginBottom: Platform.OS === 'android' ? 28 : 24,
+    alignItems: 'center',
+  },
+  redeemableOfferFitCoinsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0EDFF',
+    borderRadius: 16,
+    padding: Platform.OS === 'android' ? 20 : 18,
+    width: '100%',
+    marginBottom: Platform.OS === 'android' ? 12 : 8,
+  },
+  redeemableOfferFitCoinsTextContainer: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  redeemableOfferFitCoinsLabel: {
+    fontSize: Platform.OS === 'android' ? 14 : 13,
+    color: '#6F6F7B',
+    marginBottom: 4,
+  },
+  redeemableOfferFitCoinsValue: {
+    fontSize: Platform.OS === 'android' ? 24 : 22,
+    fontWeight: 'bold',
+    color: '#A992F6',
+    lineHeight: Platform.OS === 'android' ? 30 : 28,
+  },
+  redeemableOfferInsufficientText: {
+    fontSize: Platform.OS === 'android' ? 13 : 12,
+    color: '#FF6B6B',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    lineHeight: Platform.OS === 'android' ? 18 : 16,
+  },
+  redeemableOfferRedeemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#A992F6',
+    borderRadius: 12,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16,
+    paddingHorizontal: 24,
+    marginBottom: Platform.OS === 'android' ? 16 : 12,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#A992F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4,
+    }),
+  },
+  redeemableOfferRedeemButtonDisabled: {
+    backgroundColor: '#CCCCCC',
+    opacity: 0.6,
+  },
+  redeemableOfferRedeemButtonText: {
+    fontSize: Platform.OS === 'android' ? 16 : 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
+    lineHeight: Platform.OS === 'android' ? 22 : 20,
+  },
+  redeemableOfferBuyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#A992F6',
+    borderRadius: 12,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16,
+    paddingHorizontal: 24,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 2,
+    }),
+  },
+  redeemableOfferBuyButtonText: {
+    fontSize: Platform.OS === 'android' ? 16 : 15,
+    fontWeight: '600',
+    color: '#1E3A5F',
+    marginLeft: 8,
+    lineHeight: Platform.OS === 'android' ? 22 : 20,
   },
   // Gift Drawer
   giftDrawerBackdrop: {

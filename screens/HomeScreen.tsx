@@ -10,6 +10,8 @@ import {
   Linking,
   Alert,
   AppState,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -32,6 +34,7 @@ import {
   DailyMissionStatus,
   DAILY_GOALS as MISSION_GOALS,
 } from '../utils/dailyMissionManager';
+import { calculateHealthScore, getHealthScoreDescription } from '../utils/healthScoreCalculator';
 
 
 type RootStackParamList = {
@@ -94,6 +97,8 @@ const HomeScreen: React.FC = () => {
   const [username, setUsername] = useState('Username');
   const [isDoctorsModalVisible, setIsDoctorsModalVisible] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [userHeight, setUserHeight] = useState<string | null>(null);
+  const [userWeight, setUserWeight] = useState<string | null>(null);
 
   // Doctor data
   const doctors: Doctor[] = [
@@ -180,22 +185,28 @@ const HomeScreen: React.FC = () => {
       if (!user) return;
 
       try {
-        // Get username from profile
+        // Get username, height, and weight from profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('username, full_name, subscription_plan')
+          .select('username, full_name, subscription_plan, height, weight')
           .eq('id', user.id)
           .maybeSingle();
 
         if (profile) {
           setUsername(profile.full_name || profile.username || user.email?.split('@')[0] || 'Username');
           setIsPremium(profile.subscription_plan === 'Premium');
+          setUserHeight(profile.height || null);
+          setUserWeight(profile.weight || null);
         } else {
           setUsername(user.email?.split('@')[0] || 'Username');
+          setUserHeight(null);
+          setUserWeight(null);
         }
       } catch (error) {
         console.error('Error loading user profile:', error);
         setUsername(user.email?.split('@')[0] || 'Username');
+        setUserHeight(null);
+        setUserWeight(null);
       }
     };
 
@@ -374,6 +385,27 @@ const HomeScreen: React.FC = () => {
   }, [waterValue, totalBurnedCalories, nutritionValue, sleepValue, user?.id, missionStatus]);
 
   /**
+   * Calculate Health Score reactively based on health data and profile
+   * Updates whenever water intake, nutrition, burned calories, height, or weight changes
+   */
+  const healthScore = useMemo(() => {
+    return calculateHealthScore(
+      waterValue,
+      nutritionValue,
+      totalBurnedCalories,
+      userHeight,
+      userWeight
+    );
+  }, [waterValue, nutritionValue, totalBurnedCalories, userHeight, userWeight]);
+
+  /**
+   * Get Health Score description based on calculated score
+   */
+  const healthScoreDescription = useMemo(() => {
+    return getHealthScoreDescription(healthScore);
+  }, [healthScore]);
+
+  /**
    * Load mission completion on mount and when screen is focused
    * Also loads mission status with canClaimReward flag
    */
@@ -482,6 +514,9 @@ const HomeScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -637,8 +672,8 @@ const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           <ScoreCard
-            score={78}
-            description="Based on your overview health tracking, your score is 78 and consider good.."
+            score={healthScore}
+            description={healthScoreDescription}
           />
         </View>
       </ScrollView>
@@ -842,20 +877,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 100,
+    paddingTop: Platform.OS === 'android' ? 16 : 20, // Slightly less top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 120 : 100, // More bottom padding on Android for floating button
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
   },
   greetingContainer: {
     flexDirection: 'row',
@@ -863,9 +902,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   greeting: {
-    fontSize: 28,
+    fontSize: Platform.OS === 'android' ? 26 : 28, // Slightly smaller on Android for better fit
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 32 : 34, // Better line height on Android
   },
   premiumBadge: {
     width: 28,
@@ -884,88 +924,111 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 4, // Increased for better visibility on Android
+    }),
   },
   separator: {
     height: 1,
     backgroundColor: '#E0E0E0',
-    marginVertical: 20,
+    marginVertical: Platform.OS === 'android' ? 24 : 20, // More spacing on Android
   },
   missionStatusContainer: {
-    marginTop: 12,
+    marginTop: Platform.OS === 'android' ? 16 : 12, // More spacing on Android
     paddingHorizontal: 4,
   },
   unlockMessage: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E8F5E9',
-    padding: 12,
+    padding: Platform.OS === 'android' ? 14 : 12, // More padding on Android
     borderRadius: 12,
     gap: 8,
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 2,
+    }),
   },
   unlockText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14, // Slightly smaller on Android
     fontWeight: '600',
     color: '#2E7D32',
     flex: 1,
+    lineHeight: Platform.OS === 'android' ? 18 : 20,
   },
   lockMessage: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF3E0',
-    padding: 12,
+    padding: Platform.OS === 'android' ? 14 : 12, // More padding on Android
     borderRadius: 12,
     gap: 8,
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 2,
+    }),
   },
   lockText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14, // Slightly smaller on Android
     fontWeight: '600',
     color: '#E65100',
     flex: 1,
+    lineHeight: Platform.OS === 'android' ? 18 : 20,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'android' ? 28 : 24, // More spacing on Android
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
   },
   sectionTitle: {
-    fontSize: 24,
+    fontSize: Platform.OS === 'android' ? 22 : 24, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 28 : 30,
   },
   allDataButton: {
     backgroundColor: '#E8F4F8',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: Platform.OS === 'android' ? 10 : 8, // More padding on Android
     borderRadius: 20,
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 1,
+    }),
   },
   allDataText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14, // Slightly smaller on Android
     color: '#1AA6A6',
     fontWeight: '600',
   },
   highlightsGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  justifyContent: 'space-between',
-},
-
-highlightItem: {
-  width: '48%',       // 2 cards per row
-  marginBottom: 16,
-
- },
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    // Android-specific: Add gap for better spacing
+    ...(Platform.OS === 'android' && {
+      gap: 0, // Use marginBottom in highlightItem instead
+    }),
+  },
+  highlightItem: {
+    width: '48%', // 2 cards per row
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
+  },
   // Modal Styles
   modalOverlay: {
     flex: 1,
@@ -1001,11 +1064,17 @@ highlightItem: {
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E8E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
     alignItems: 'center',
   },
   doctorInfo: {
@@ -1127,11 +1196,17 @@ highlightItem: {
     padding: 16,
     borderWidth: 1,
     borderColor: '#E8E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   drawerInfoRow: {
     flexDirection: 'row',

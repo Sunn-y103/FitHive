@@ -7,6 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
+  Platform,
+  StatusBar,
   TextInput,
   Switch,
   Alert,
@@ -670,26 +672,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'android' ? 18 : 16, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 22 : 20, // More padding on Android
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: Platform.OS === 'android' ? 26 : 28, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 32 : 34,
   },
   settingsButton: {
     width: 44,
@@ -698,24 +706,36 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   // Profile Card
   profileCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    padding: 24,
+    padding: Platform.OS === 'android' ? 26 : 24, // More padding on Android
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#A992F6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
+    marginBottom: Platform.OS === 'android' ? 20 : 16, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#A992F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 12,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 5, // Increased for better visibility
+    }),
   },
   avatarContainer: {
     position: 'relative',

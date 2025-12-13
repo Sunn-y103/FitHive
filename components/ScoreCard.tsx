@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
 
 interface ScoreCardProps {
   score: number;
@@ -16,7 +16,17 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ score, description }) => {
         </View>
       </View>
       <Text style={styles.description}>{description}</Text>
-      <TouchableOpacity style={styles.linkContainer}>
+      <TouchableOpacity 
+        style={styles.linkContainer}
+        onPress={() => {
+          const url = 'https://www.paddle.com/resources/customer-health-score';
+          Linking.openURL(url).catch((err) => {
+            console.error('Failed to open URL:', err);
+            Alert.alert('Error', 'Could not open the website. Please try again later.');
+          });
+        }}
+        activeOpacity={0.8}
+      >
         <Text style={styles.linkText}>Tell me more &gt;</Text>
       </TouchableOpacity>
     </View>

@@ -10,6 +10,8 @@ import {
   TextInput,
   Dimensions,
   Image,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -154,6 +156,9 @@ const PeriodCycleScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -357,13 +362,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
   },
   backButton: {
     width: 40,
@@ -372,9 +381,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   headerSpacer: {
     width: 40,
@@ -384,7 +394,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   // Week Selector
   weekSelector: {

@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -200,6 +202,9 @@ const WorkoutCameraScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      )}
       <CameraView
         ref={cameraRef}
         style={styles.camera}
@@ -305,6 +310,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.navy,
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   camera: {
     flex: 1,
@@ -318,8 +327,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'android' ? 18 : 16, // More padding on Android
+    paddingBottom: Platform.OS === 'android' ? 22 : 20, // More padding on Android
   },
   closeButton: {
     width: 44,
@@ -328,11 +337,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    // Android elevation for better visibility
+    ...(Platform.OS === 'android' && {
+      elevation: 3,
+    }),
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: COLORS.white,
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   headerSpacer: {
     width: 44,

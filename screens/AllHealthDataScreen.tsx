@@ -45,6 +45,8 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -782,6 +784,9 @@ const AllHealthDataScreen: React.FC<AllHealthDataScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
+      {Platform.OS === 'android' && (
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F7FA" />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -852,13 +857,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F7FA',
+    // Android-specific: Add padding top to account for status bar
+    ...(Platform.OS === 'android' && {
+      paddingTop: StatusBar.currentHeight || 0,
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 18 : 16, // More padding on Android
   },
   backButton: {
     width: 40,
@@ -867,9 +876,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.OS === 'android' ? 19 : 20, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 24 : 26,
   },
   headerSpacer: {
     width: 40,
@@ -879,23 +889,30 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'android' ? 8 : 0, // Add top padding on Android
+    paddingBottom: Platform.OS === 'android' ? 50 : 40, // More bottom padding on Android
   },
   healthDataItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: Platform.OS === 'android' ? 18 : 16, // More padding on Android
+    marginBottom: Platform.OS === 'android' ? 16 : 12, // More spacing on Android
+    // iOS shadow
+    ...(Platform.OS === 'ios' && {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+    }),
+    // Android elevation
+    ...(Platform.OS === 'android' && {
+      elevation: 3, // Increased for better visibility
+    }),
   },
   iconContainer: {
     width: 52,
@@ -909,22 +926,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   healthDataTitle: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14, // Slightly smaller on Android
     color: '#6F6F7B',
-    marginBottom: 4,
+    marginBottom: Platform.OS === 'android' ? 6 : 4, // More spacing on Android
+    lineHeight: Platform.OS === 'android' ? 18 : 20,
   },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   healthDataValue: {
-    fontSize: 22,
+    fontSize: Platform.OS === 'android' ? 21 : 22, // Slightly smaller on Android
     fontWeight: 'bold',
     color: '#1E3A5F',
+    lineHeight: Platform.OS === 'android' ? 26 : 28,
   },
   healthDataUnit: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14, // Slightly smaller on Android
     color: '#6F6F7B',
+    lineHeight: Platform.OS === 'android' ? 18 : 20,
   },
   dragSection: {
     flexDirection: 'row',
