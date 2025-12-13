@@ -340,10 +340,6 @@ const ProfileScreen: React.FC = () => {
             onPress={handleOpenEdit}
           />
           <MenuItem
-            icon="shield-checkmark-outline"
-            title="Privacy & Security"
-          />
-          <MenuItem
             icon="card-outline"
             title="Subscription"
             subtitle={subscriptionPlan}
@@ -354,19 +350,6 @@ const ProfileScreen: React.FC = () => {
         {/* Preferences Section */}
         <Text style={styles.sectionTitle}>Preferences</Text>
         <View style={styles.menuSection}>
-          <MenuItem
-            icon="notifications-outline"
-            title="Notifications"
-            showChevron={false}
-            rightElement={
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
-                trackColor={{ false: '#E8E8F0', true: '#A992F6' }}
-                thumbColor="#FFFFFF"
-              />
-            }
-          />
           <MenuItem
             icon="moon-outline"
             title="Dark Mode"
@@ -380,20 +363,11 @@ const ProfileScreen: React.FC = () => {
               />
             }
           />
-          <MenuItem
-            icon="language-outline"
-            title="Language"
-            subtitle="English"
-          />
         </View>
 
         {/* Support Section */}
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.menuSection}>
-          <MenuItem
-            icon="help-circle-outline"
-            title="Help & FAQ"
-          />
           <MenuItem
             icon="chatbubble-outline"
             title="Contact Us"

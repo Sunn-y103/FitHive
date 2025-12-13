@@ -17,13 +17,18 @@ import BMIScreen from '../screens/BMIScreen';
 import NutritionScreen from '../screens/NutritionScreen';
 import BurnedCaloriesScreen from '../screens/BurnedCaloriesScreen';
 import DoctorDetailsScreen, { Doctor } from '../screens/DoctorDetailsScreen';
+import CoachProfileScreen from '../screens/CoachProfileScreen';
+import BookSessionScreen from '../screens/BookSessionScreen';
+import BookingConfirmationScreen from '../screens/BookingConfirmationScreen';
+import CoachChatScreen from '../screens/CoachChatScreen';
+import { Coach } from '../screens/CoachScreen';
 import BottomTabs from './BottomTabs';
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   SignUp: undefined;
   Onboarding: undefined;
-  HomeTabs: undefined;
+  HomeTabs: { screen?: 'Home' | 'Rewards' | 'Community' | 'Coach' | 'User' } | undefined;
   AllHealthData: undefined;
   WaterIntake: undefined;
   Sleep: undefined;
@@ -36,6 +41,10 @@ export type RootStackParamList = {
   Nutrition: undefined;
   BurnedCalories: undefined;
   DoctorDetails: { doctor: Doctor };
+  CoachProfile: { coach: Coach };
+  BookSession: { coach: Coach };
+  BookingConfirmation: { coach: Coach; date: string; time: string };
+  CoachChat: { coach: Coach };
 };
 const Stack = createStackNavigator<RootStackParamList>();
 const AppNavigator: React.FC = () => {
@@ -59,6 +68,10 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="Nutrition" component={NutritionScreen} />
         <Stack.Screen name="BurnedCalories" component={BurnedCaloriesScreen} />
         <Stack.Screen name="DoctorDetails" component={DoctorDetailsScreen} />
+        <Stack.Screen name="CoachProfile" component={CoachProfileScreen} />
+        <Stack.Screen name="BookSession" component={BookSessionScreen} />
+        <Stack.Screen name="BookingConfirmation" component={BookingConfirmationScreen} />
+        <Stack.Screen name="CoachChat" component={CoachChatScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

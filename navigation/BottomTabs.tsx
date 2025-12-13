@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HomeScreen from '../screens/HomeScreen';
 import RewardsScreen from '../screens/RewardsScreen';
 import CommunityScreen from '../screens/CommunityScreen';
+import CoachScreen from '../screens/CoachScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
@@ -21,6 +22,8 @@ const BottomTabs: React.FC = () => {
             iconName = focused ? 'gift' : 'gift-outline';
           } else if (route.name === 'Community') {
             iconName = focused ? 'people' : 'people-outline';
+          } else if (route.name === 'Coach') {
+            iconName = focused ? 'fitness' : 'fitness-outline';
           } else if (route.name === 'User') {
             iconName = focused ? 'person' : 'person-outline';
           } else {
@@ -35,8 +38,8 @@ const BottomTabs: React.FC = () => {
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
           borderTopColor: '#E0E0E0',
-          height: 70,
-          paddingBottom: 10,
+          height: 80,
+          paddingBottom: 20,
           paddingTop: 10,
           shadowColor: '#000',
           shadowOffset: {
@@ -57,6 +60,7 @@ const BottomTabs: React.FC = () => {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Rewards" component={RewardsScreen} />
       <Tab.Screen name="Community" component={CommunityScreen} />
+      <Tab.Screen name="Coach" component={CoachScreen} />
       <Tab.Screen name="User" component={ProfileScreen} />
     </Tab.Navigator>
   );
