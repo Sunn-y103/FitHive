@@ -67,8 +67,6 @@ npm install
 npx expo start
 ```
 
-Add your Supabase keys to the environment file before running.
-
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome.
